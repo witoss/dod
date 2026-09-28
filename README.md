@@ -1,0 +1,2 @@
+# dod
+discipline over dopamine
