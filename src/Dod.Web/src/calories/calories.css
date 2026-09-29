@@ -1,0 +1,313 @@
+.calorie-section {
+  margin-top: 40px;
+  padding: 30px;
+  background: #fff;
+  border: 1px solid #e1e6dc;
+  border-radius: 18px;
+}
+.balance-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.balance-heading h2 {
+  margin: 8px 0;
+}
+.balance-heading .eyebrow {
+  margin-top: 0;
+}
+.balance-description,
+.reference-copy p,
+.balance-note {
+  color: #607268;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.balance-unit {
+  background: #f0f3e9;
+  border-radius: 20px;
+  padding: 8px 12px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.reference-form {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: center;
+  margin-top: 22px;
+  padding: 20px;
+  background: #f5f7f0;
+  border-radius: 12px;
+}
+.reference-copy {
+  flex: 1;
+}
+.reference-copy label {
+  font-size: 14px;
+  font-weight: 700;
+}
+.reference-copy p {
+  font-size: 12px;
+  margin: 6px 0 0;
+  max-width: 320px;
+}
+.reference-controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.reference-input {
+  display: flex;
+  align-items: center;
+  background: white;
+  border: 1px solid #cdd6c6;
+  border-radius: 8px;
+  padding-right: 12px;
+}
+.reference-input input {
+  border: 0;
+  background: transparent;
+  width: 112px;
+  padding: 12px 10px;
+  font: inherit;
+  color: inherit;
+}
+.reference-input span {
+  font-size: 12px;
+  color: #607268;
+}
+.reference-status {
+  min-height: 16px;
+  font-size: 12px;
+  color: #326451;
+}
+.chart-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 18px;
+}
+.chart-toolbar p {
+  font-size: 14px;
+  font-weight: 600;
+}
+.chart-toolbar p span {
+  color: #607268;
+  font-weight: 400;
+  font-size: 12px;
+}
+.range-control {
+  display: flex;
+  background: #f0f3e9;
+  padding: 4px;
+  border-radius: 9px;
+  gap: 3px;
+}
+.range-control button {
+  background: transparent;
+  color: #52675c;
+  padding: 8px 12px;
+  white-space: nowrap;
+}
+.range-control button[aria-pressed="true"] {
+  background: #244d40;
+  color: white;
+}
+.balance-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  padding: 22px 0;
+  border-bottom: 1px solid #e1e6dc;
+}
+.balance-stats span {
+  display: block;
+  color: #607268;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.balance-stats strong {
+  font-size: 28px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.balance-stats small {
+  font-size: 12px;
+  color: #607268;
+  font-weight: 400;
+}
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  padding: 24px 0 10px;
+  color: #607268;
+  font-size: 12px;
+}
+.chart-legend span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.chart-legend i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+}
+.above-dot {
+  background: #367d71;
+}
+.below-dot {
+  background: #c58b4a;
+}
+.missing-dot {
+  border: 1px solid #99a89d;
+}
+.balance-plot {
+  overflow-x: auto;
+}
+.balance-plot svg {
+  display: block;
+  width: 100%;
+}
+.grid-line {
+  stroke: #e8ede5;
+  stroke-dasharray: 3 5;
+}
+.zero-line {
+  stroke: #94a89b;
+  stroke-width: 1.5;
+}
+.axis-label,
+.axis-caption {
+  font-size: 11px;
+  fill: #607268;
+  font-family: inherit;
+}
+.axis-caption {
+  font-size: 10px;
+}
+.chart-day {
+  cursor: pointer;
+  outline: none;
+}
+.day-highlight {
+  fill: transparent;
+}
+.day-highlight.active,
+.chart-day:hover .day-highlight {
+  fill: #274f4010;
+}
+.chart-day:focus-visible .day-highlight {
+  stroke: #8d7b35;
+  stroke-width: 2;
+}
+.above-bar {
+  fill: #367d71;
+}
+.below-bar {
+  fill: #c58b4a;
+}
+.zero-bar {
+  fill: #607268;
+}
+.missing-point {
+  fill: white;
+  stroke: #99a89d;
+}
+.day-detail {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  background: #f5f7f0;
+  border-radius: 10px;
+  font-size: 13px;
+}
+.day-detail small {
+  display: block;
+  font-size: 11px;
+  color: #607268;
+  margin-top: 5px;
+}
+.above-text {
+  color: #28665c;
+}
+.below-text {
+  color: #875920;
+}
+.balance-note {
+  margin-bottom: 0;
+  font-size: 12px;
+}
+.balance-table {
+  margin-top: 20px;
+  font-size: 12px;
+}
+.balance-table summary {
+  cursor: pointer;
+  padding: 6px 0;
+}
+.balance-table summary:focus-visible {
+  outline: 3px solid #b19e46;
+  outline-offset: 3px;
+}
+@media (max-width: 800px) {
+  .reference-form {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .reference-controls {
+    width: 100%;
+  }
+  .reference-input {
+    flex: 1;
+  }
+  .reference-input input {
+    width: 100%;
+  }
+}
+@media (max-width: 650px) {
+  .calorie-section {
+    padding: 20px 16px;
+  }
+  .balance-unit {
+    display: none;
+  }
+  .chart-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .balance-stats {
+    gap: 12px;
+  }
+  .balance-stats strong {
+    font-size: 23px;
+  }
+  .balance-stats small {
+    display: block;
+    margin-top: 4px;
+  }
+  .day-detail {
+    flex-wrap: wrap;
+  }
+  .day-detail strong {
+    width: 100%;
+  }
+  .reference-form {
+    padding: 14px;
+  }
+  .reference-controls {
+    flex-wrap: wrap;
+  }
+  .reference-controls button {
+    flex: 1;
+    white-space: nowrap;
+  }
+}
