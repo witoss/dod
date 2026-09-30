@@ -1,8 +1,12 @@
 namespace Dod.Api.Entries;
 
-public record DailyEntry(DateOnly Date, decimal? WeightKg, int? CaloriesBurned);
+public record DailyEntry(DateOnly Date, decimal? WeightKg, int? CaloriesBurned)
+{
+    public int? CaloriesEaten { get; init; }
+}
 public record WeightInput(decimal WeightKg);
 public record CaloriesInput(int CaloriesBurned);
+public record EatenInput([property: System.Text.Json.Serialization.JsonRequired] int? CaloriesEaten);
 
 public static class EntryEndpoints
 {
@@ -10,6 +14,13 @@ public static class EntryEndpoints
     {
         var group = app.MapGroup("/api/entries");
         group.MapGet("/", async (EntryStore store) => Results.Ok(await store.ListAsync()));
+        group.MapPut("/{date}/eaten", async (DateOnly date, EatenInput input, EntryStore store) =>
+        {
+            if (input.CaloriesEaten is < 0 or > 100000)
+                return Results.ValidationProblem(new Dictionary<string, string[]> { ["caloriesEaten"] = ["Enter a whole number from 0 to 100000 kcal, or null to use the reference."] });
+            await store.SaveEatenAsync(date, input.CaloriesEaten);
+            return Results.NoContent();
+        });
         group.MapPut("/{date}/weight", async (DateOnly date, WeightInput input, EntryStore store) =>
         {
             if (input.WeightKg is <= 0 or > 1000)

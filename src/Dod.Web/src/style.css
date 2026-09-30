@@ -198,6 +198,7 @@ a:focus-visible {
   color: #748074;
 }
 .table-wrap {
+  position: relative;
   overflow-x: auto;
 }
 table {

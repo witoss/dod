@@ -7,3 +7,8 @@
 **/data
 .env
 **/*.db*
+**/.env
+**/.env.*
+**/backups
+**/release.env*
+**/previous-release.env

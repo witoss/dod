@@ -7,6 +7,7 @@ import {
   type CalorieMeasurement,
 } from "./balance";
 import "./calories.css";
+import { CumulativeChart } from "./CumulativeChart";
 
 type Reference = { calories: number | null };
 const referenceUrl = "/api/settings/calorie-reference";
@@ -91,7 +92,7 @@ export function CalorieBalance({
           <p className="eyebrow">FIND YOUR RHYTHM</p>
           <h2 id="balance-heading">Your calorie balance</h2>
           <p className="balance-description">
-            See how your daily burn compares with your reference.
+            Compare calories eaten with calories burned.
           </p>
         </div>
         <span className="balance-unit">kcal / day</span>
@@ -109,8 +110,8 @@ export function CalorieBalance({
             <div className="reference-copy">
               <label htmlFor="calorie-reference">Daily calorie reference</label>
               <p>
-                One reference for all days. Changing it recalculates past
-                comparisons.
+                Default calories eaten for days without an intake entry.
+                Changing it recalculates only those days.
               </p>
             </div>
             <div className="reference-controls">
@@ -210,10 +211,11 @@ export function CalorieBalance({
                   reference={reference}
                 />
               )}
+              <CumulativeChart days={days} />
               <p className="balance-note">
-                Balance = reference − calories burned. Burning more than your
-                reference gives a negative balance; this is not a food calorie deficit. Missing
-                days are excluded from the average.
+                Balance = calories eaten − calories burned. Days without an
+                intake entry use the reference as estimated intake. Days without
+                calories burned are excluded.
               </p>
             </>
           )}
@@ -266,11 +268,11 @@ function BalanceChart({
       <div className="chart-legend">
         <span>
           <i className="above-dot" />
-          Burned above reference (−)
+          Burned more than eaten (−)
         </span>
         <span>
           <i className="below-dot" />
-          Burned below reference (+)
+          Burned less than eaten (+)
         </span>
         <span>
           <i className="missing-dot" />
@@ -285,7 +287,7 @@ function BalanceChart({
       >
         <svg
           viewBox={`0 0 ${chartWidth} 324`}
-          aria-label="Bars show your reference minus calories burned, with zero at the center"
+          aria-label="Bars show calories eaten minus calories burned, with zero at the center"
         >
           <text x="12" y="18" className="axis-caption">
             kcal
@@ -400,7 +402,10 @@ function BalanceChart({
           {active.caloriesBurned === null
             ? "No calorie entry"
             : `${active.caloriesBurned.toLocaleString()} kcal burned`}
-          <small>Reference: {reference.toLocaleString()} kcal</small>
+          <small>
+            Eaten: {(active.caloriesEaten ?? reference).toLocaleString()} kcal (
+            {active.caloriesEaten == null ? "reference" : "recorded"})
+          </small>
         </span>
         <strong
           className={
@@ -421,13 +426,14 @@ function BalanceChart({
         <div className="table-wrap">
           <table>
             <caption className="sr-only">
-              Daily calories compared with the current reference of {reference}{" "}
-              kcal
+              Daily eaten and burned calories, using {reference} kcal as the
+              default intake
             </caption>
             <thead>
               <tr>
                 <th scope="col">Date</th>
                 <th scope="col">Burned</th>
+                <th scope="col">Eaten</th>
                 <th scope="col">Balance</th>
               </tr>
             </thead>
@@ -439,6 +445,10 @@ function BalanceChart({
                     {day.caloriesBurned === null
                       ? "Not recorded"
                       : `${day.caloriesBurned.toLocaleString()} kcal`}
+                  </td>
+                  <td>
+                    {(day.caloriesEaten ?? reference).toLocaleString()} kcal (
+                    {day.caloriesEaten == null ? "reference" : "recorded"})
                   </td>
                   <td>
                     {day.balance === null

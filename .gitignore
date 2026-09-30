@@ -437,3 +437,9 @@ FodyWeavers.xsd
 *.db-wal
 .env.*
 !.env.example
+
+# VPS runtime state and backups
+deploy/vps/release.env*
+deploy/vps/previous-release.env
+deploy/vps/backups/
+deploy/vps/.operations.lock

@@ -117,8 +117,10 @@ public sealed class EntryTests : IDisposable
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.PutAsJsonAsync("/api/settings/calorie-reference", new { calories = 2200 })).StatusCode);
     }
 
-    [Fact]
-    public async Task UpgradesOriginalDatabaseWithoutLosingMeasurements()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    public async Task UpgradesOriginalDatabaseWithoutLosingMeasurements(int version)
     {
         Directory.CreateDirectory(directory);
         await using (var connection = new SqliteConnection($"Data Source={Path.Combine(directory, "test.db")}"))
@@ -130,14 +132,66 @@ public sealed class EntryTests : IDisposable
                 INSERT INTO Entries VALUES ('2026-09-28', 75.25, 2400);
                 """;
             await command.ExecuteNonQueryAsync();
+            if (version == 2)
+            {
+                command.CommandText = "CREATE TABLE CalorieReference (Id INTEGER PRIMARY KEY, Calories INTEGER NOT NULL); INSERT INTO CalorieReference VALUES (1, 2100); PRAGMA user_version=2;";
+                await command.ExecuteNonQueryAsync();
+            }
         }
         using var app = CreateApp();
         using var client = app.CreateClient();
         var entry = Assert.Single((await client.GetFromJsonAsync<List<DailyEntry>>("/api/entries/"))!);
+        Assert.Null(entry.CaloriesEaten);
+        if (version == 2) Assert.Equal(2100, (await client.GetFromJsonAsync<CalorieReferenceResponse>("/api/settings/calorie-reference"))!.Calories);
         Assert.Equal(75.25m, entry.WeightKg);
         Assert.Equal(2400, entry.CaloriesBurned);
         Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync("/api/settings/calorie-reference", new { calories = 2200 })).StatusCode);
         Assert.Equal(2200, (await client.GetFromJsonAsync<CalorieReferenceResponse>("/api/settings/calorie-reference"))!.Calories);
+    }
+
+    [Fact]
+    public async Task EatenOverridePersistsAndCanBeClearedWithoutChangingOtherMeasurements()
+    {
+        using (var app = CreateApp())
+        using (var client = app.CreateClient())
+        {
+            await client.PutAsJsonAsync("/api/entries/2026-09-28/weight", new { weightKg = 75 });
+            await client.PutAsJsonAsync("/api/entries/2026-09-28/calories", new { caloriesBurned = 2400 });
+            Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync("/api/entries/2026-09-28/eaten", new { caloriesEaten = 0 })).StatusCode);
+        }
+        using var restarted = CreateApp();
+        using var restartedClient = restarted.CreateClient();
+        var entry = Assert.Single((await restartedClient.GetFromJsonAsync<List<DailyEntry>>("/api/entries/"))!);
+        Assert.Equal(0, entry.CaloriesEaten);
+        Assert.Equal(75m, entry.WeightKg);
+        Assert.Equal(2400, entry.CaloriesBurned);
+        Assert.Equal(HttpStatusCode.NoContent, (await restartedClient.PutAsJsonAsync("/api/entries/2026-09-28/eaten", new { caloriesEaten = (int?)null })).StatusCode);
+        entry = Assert.Single((await restartedClient.GetFromJsonAsync<List<DailyEntry>>("/api/entries/"))!);
+        Assert.Null(entry.CaloriesEaten);
+        Assert.Equal(75m, entry.WeightKg);
+        Assert.Equal(2400, entry.CaloriesBurned);
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{\"caloriesEaten\":-1}")]
+    [InlineData("{\"caloriesEaten\":100001}")]
+    [InlineData("{\"caloriesEaten\":1.5}")]
+    public async Task InvalidEatenOverrideDoesNotOverwriteIntake(string json)
+    {
+        using var app = CreateApp();
+        using var client = app.CreateClient();
+        await client.PutAsJsonAsync("/api/entries/2026-09-28/eaten", new { caloriesEaten = 2100 });
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PutAsync("/api/entries/2026-09-28/eaten", new StringContent(json, Encoding.UTF8, "application/json"))).StatusCode);
+        Assert.Equal(2100, Assert.Single((await client.GetFromJsonAsync<List<DailyEntry>>("/api/entries/"))!).CaloriesEaten);
+    }
+
+    [Fact]
+    public async Task ClearingMissingOverrideDoesNotCreateAnEmptyDay()
+    {
+        using var app = CreateApp(); using var client = app.CreateClient();
+        await client.PutAsJsonAsync("/api/entries/2026-09-28/eaten", new { caloriesEaten = (int?)null });
+        Assert.Empty((await client.GetFromJsonAsync<List<DailyEntry>>("/api/entries/"))!);
     }
 
     public void Dispose() { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); if (Directory.Exists(directory)) Directory.Delete(directory, true); }

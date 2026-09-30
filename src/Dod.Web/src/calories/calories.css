@@ -311,3 +311,73 @@
     white-space: nowrap;
   }
 }
+
+.cumulative-section {
+  margin-top: 32px;
+  border-top: 1px solid #e1e6dc;
+  padding-top: 28px;
+}
+.cumulative-section h3 {
+  margin: 8px 0;
+}
+.period-total {
+  text-align: right;
+  flex-shrink: 0;
+}
+.period-total > span {
+  display: block;
+  font-size: 12px;
+  color: #607268;
+  margin-bottom: 8px;
+}
+.period-total strong {
+  font-size: 28px;
+  font-variant-numeric: tabular-nums;
+}
+.period-total small {
+  font-size: 12px;
+  font-weight: 400;
+}
+.cumulative-line {
+  fill: none;
+  stroke: #367d71;
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+}
+.cumulative-point {
+  fill: #367d71;
+  stroke: white;
+  stroke-width: 2;
+  pointer-events: none;
+}
+.cumulative-hit {
+  fill: transparent;
+}
+.chart-day:focus-visible .cumulative-hit {
+  stroke: #8d7b35;
+  stroke-width: 2;
+}
+@media (max-width: 650px) {
+  .cumulative-section .balance-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .period-total {
+    text-align: left;
+  }
+}
+
+.eaten-card {
+  grid-column: 1 / -1;
+}
+.eaten-card .number-field {
+  max-width: 430px;
+}
+.eaten-card .number-field input {
+  font-size: 26px;
+}
+.eaten-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}

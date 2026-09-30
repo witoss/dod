@@ -1,5 +1,7 @@
 # DevOps learning path
 
+We have chosen a Hetzner VPS. Follow the concrete [VPS deployment tutorial](vps.md) for the prepared production files, server setup, first release, and manual GitHub deployment workflow. Infrastructure has not yet been provisioned.
+
 ## 1. Understand the local deployment
 
 `docker compose up --build` builds React assets, publishes .NET, then packages both in a runtime image. The final container runs as a non-root user. Only port 8080 is exposed, and Compose binds it to localhost. The database lives on a named volume, outside the disposable container.
@@ -12,7 +14,7 @@ Push the repository to GitHub. Pull requests run backend integration tests, fron
 
 After tests pass on `main`, Actions publishes `ghcr.io/<owner>/dod:<commit-sha>`. The SHA identifies the exact revision for deployment and rollback. Package publishing uses the workflow's scoped `GITHUB_TOKEN`; no registry password belongs in the repository. Dependabot opens dependency updates weekly. Review and merge those only after checks pass.
 
-The supplied workflow does not deploy a server. Continuous delivery makes an artifact available; continuous deployment rolls it out automatically. Learn the first before enabling the second.
+The `ci.yml` workflow builds and publishes images. The separate `deploy.yml` workflow can manually deploy a successful main-branch image once the VPS and SSH secrets are configured. Continuous delivery makes an artifact available; continuous deployment rolls it out automatically. Learn the first before enabling the second.
 
 ## 3. First hosted release
 
@@ -37,9 +39,9 @@ For a cold backup: stop the app with `docker compose stop app`, locate the volum
 
 ## 5. Deployment automation
 
-After the manual deployment works, add a GitHub `production` environment with a required reviewer. A deployment job should depend on CI, deploy the tested SHA, wait for health, and preserve the previous SHA for rollback. Prefer short-lived cloud identity credentials where your selected provider supports them. Scope deployment credentials to this application.
+After the manual deployment works, configure the prepared workflow with a GitHub `production` environment with a required reviewer. A deployment job should depend on CI, deploy the tested SHA, wait for health, and preserve the previous SHA for rollback. Prefer short-lived cloud identity credentials where your selected provider supports them. Scope deployment credentials to this application.
 
-Rollback means redeploying the previous image SHA. Database changes also need a compatibility plan: startup now uses SQLite `user_version` migrations. Version 2 adds the calorie reference without changing existing journal entries. Future schema changes need a new migration version and a backup before deployment. A binary rollback cannot undo incompatible schema changes.
+Rollback means redeploying the previous image SHA. Database changes also need a compatibility plan: startup now uses SQLite `user_version` migrations. Version 2 adds the calorie reference; version 3 adds optional daily calories eaten. Both preserve existing journal measurements. Future schema changes need a new migration version and a backup before deployment. A binary rollback cannot undo incompatible schema changes.
 
 ## 6. Extend when needed
 

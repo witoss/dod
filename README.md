@@ -14,6 +14,8 @@ A personal journal for morning weight and evening calories burned, built with .N
 - [8. Follow a change from idea to deployment](#8-follow-a-change-from-idea-to-deployment)
 - [9. API reference](#9-api-reference)
 - [10. Troubleshooting](#10-troubleshooting)
+- [11. Set up a fresh Ubuntu VPS](#11-set-up-a-fresh-ubuntu-vps)
+- [VPS deployment tutorial](docs/vps.md)
 
 ## 1. Install and run the app
 
@@ -96,12 +98,15 @@ Use a consistent definition of calories burned, such as the total daily number r
 
 ### Configure the reference and read the graph
 
-Below the entry forms, find **Your calorie balance**. Enter a **Daily calorie reference** and select **Save reference**. The reference is saved in SQLite and survives restarts.
+Below the entry forms, find **Your calorie balance**. Enter a **Daily calorie reference** and select **Save reference**. The reference is saved in SQLite and survives restarts. It is the default calories eaten for days without a specific intake entry.
+
+Use the optional **Calories eaten** form for the selected day to override that default. A recorded zero is an explicit value. Select **Use reference**, or save an empty intake field, to clear the override. Saving intake preserves that day's weight and calories burned.
 
 The calculation is:
 
 ```text
-balance = reference − calories burned
+calories eaten = daily entry, if specified; otherwise the reference
+balance = calories eaten − calories burned
 ```
 
 | Reference | Burned | Balance | Meaning |
@@ -112,9 +117,17 @@ balance = reference − calories burned
 
 Choose a 7-, 14-, or 30-day period ending on the date selected above the entry forms. Hover, tap, or keyboard-focus a day for details. Expand the table below the graph to read the same daily balances as text.
 
-Missing days are excluded from the average; a recorded zero is included. Changing the reference recalculates all historical comparisons without changing the recorded calories. The app uses one current reference, not a separate historical reference for each day.
+Missing days are excluded from the average; a recorded zero is included. Changing the reference recalculates historical days without intake overrides; days with recorded intake keep their own value. The app uses one current reference, not a separate historical reference for each day.
 
-This is a comparison with your burn reference. Calculating a food calorie deficit would also require calorie intake data.
+### Period summary and cumulative chart
+
+The **Cumulative balance** chart below the daily bars adds the daily balances within the selected 7-, 14-, or 30-day period. **Period total** shows the final sum. The running total starts from zero at the start of each selected period; it does not include earlier dates.
+
+Each day contributes `calories eaten − calories burned`, taking the recorded intake when available and the daily reference otherwise. For example, daily balances of −300, +100, and −200 produce running totals of −300, −200, and −400 kcal.
+
+Missing days appear as gaps and contribute nothing. The recorded-day count shows how complete the period is. The sum continues at the next recorded day, and a recorded zero balance remains a valid point. Hover, tap, or focus a point for its daily and cumulative values, or open the cumulative table. Changing the period, reference, or a calorie entry recalculates the summary.
+
+Days using the reference have estimated intake; days with an override use your recorded intake. Both charts and their tables use the same rule.
 
 ## 3. Develop and test locally
 
@@ -228,9 +241,9 @@ This is a single-account design. Public hosting must use HTTPS because Basic aut
 
 ### Step 6: Add the reference without rewriting measurements
 
-The reference is stored separately from daily measurements. The frontend derives balances from the saved reference and the existing calorie entries. This makes changes to the reference immediately visible without rewriting history.
+The reference is stored separately from daily measurements. The frontend derives balances from the saved reference and the existing calorie entries. Daily intake overrides are stored on the entry as nullable `CaloriesEaten`. A null means use the reference; zero is a real measurement. Balances are calculated when displayed, so changing the reference affects only days without overrides.
 
-SQLite's `user_version` records the schema version. The version 2 startup migration adds the reference table in a transaction and adopts the original unversioned database without deleting entries. Tests exercise that upgrade. Future schema changes should introduce a new migration version.
+SQLite's `user_version` records the schema version. The version 2 startup migration adds the reference table in a transaction and adopts the original unversioned database without deleting entries. Version 3 adds nullable `CaloriesEaten` to existing entries, leaving their measurements intact. Tests exercise upgrades from both the original schema and version 2. Future schema changes should introduce a new migration version.
 
 ### Step 7: Package one deployable app
 
@@ -344,7 +357,7 @@ The workflow is: edit with hot reload, run tests, then test the production image
 
 **Continuous delivery** produces a deployable artifact after checks pass. Here, the artifact is a Docker image stored in GitHub Container Registry (GHCR).
 
-**Continuous deployment** automatically updates a running environment. This repository does not yet do that. Publishing an image does not update your local container or a hosted website.
+**Continuous deployment** automatically updates a running environment. The app build workflow does not do that. A separate, manually triggered **Deploy to VPS** workflow is prepared for a configured server. Publishing an image alone does not update your local container or a hosted website.
 
 ### Follow the current workflow
 
@@ -382,11 +395,13 @@ The publishing job uses GitHub's provided `GITHUB_TOKEN` with package-write perm
 
 Configure branch protection or a ruleset to require the checks before merging, where supported by your repository settings. The workflow file alone does not enforce that rule. Dependabot is configured to propose weekly dependency updates; review their checks before merging them.
 
-### Add deployment later
+### Deploy to the VPS
 
-Hosting has not been provisioned. The next stage is to select a host, attach persistent storage, configure HTTPS and runtime secrets, and deploy a tested image tag manually. Once that works, automate the same steps with health checks and a rollback plan.
+We have chosen a Hetzner VPS. The production Compose file, Caddy HTTPS configuration, backup/deployment scripts, and manual GitHub deployment workflow are prepared. The Hetzner server has been created and Docker has been verified on Ubuntu 26.04 LTS. The DuckDNS hostname `dodop.duckdns.org` has been registered and its IPv4 record verified. HTTPS and application deployment are still pending.
 
-See [docs/devops.md](docs/devops.md) for the operational details: hosting, backups, production approvals, and rollback. Database compatibility matters during rollback—an older image cannot automatically undo a schema change.
+Follow the [VPS deployment tutorial](docs/vps.md) in order: create the server, configure SSH and DNS, install Docker, deploy a successful CI image manually, verify HTTPS, test backups, and then configure the GitHub deployment secrets. The manual workflow verifies that the selected commit passed the main-branch CI pipeline before deploying it.
+
+See [docs/devops.md](docs/devops.md) for the broader learning path. Database compatibility matters during rollback—an older image cannot automatically undo a schema change.
 
 ## 8. Follow a change from idea to deployment
 
@@ -408,6 +423,7 @@ Use this sequence when extending the app:
 | GET | `/api/entries/` | — |
 | PUT | `/api/entries/2026-09-28/weight` | `{ "weightKg": 75.25 }` |
 | PUT | `/api/entries/2026-09-28/calories` | `{ "caloriesBurned": 2400 }` |
+| PUT | `/api/entries/2026-09-28/eaten` | `{ "caloriesEaten": 2100 }` or `{ "caloriesEaten": null }` to use the reference |
 | GET | `/api/settings/calorie-reference` | — |
 | PUT | `/api/settings/calorie-reference` | `{ "calories": 2200 }` |
 | GET | `/health` | — |
@@ -430,3 +446,233 @@ The health route is a liveness probe: it confirms that the process can respond. 
 | A port is already in use | Stop the conflicting process or choose another host port; use that port in the browser. |
 
 For application errors, start with `docker compose logs -f app` and check `http://localhost:8080/health`.
+
+
+## 11. Set up a fresh Ubuntu VPS
+
+This records the server setup completed for this project on **Ubuntu 26.04 LTS**, including the initial password-based SSH connection. Use it when setting up a replacement server. Docker Engine and Compose are installed on the VPS; Docker Desktop is only needed on your Mac for local containers.
+
+### Current progress — 30 September 2026
+
+| Item | Status |
+| --- | --- |
+| Hetzner VPS | Running Ubuntu 26.04 LTS at `37.27.148.183` |
+| Initial root login | Connected using the emailed password |
+| Docker Engine and Compose | Installed; `hello-world` and Compose verification succeeded |
+| SSH key | Created on the Mac at `~/.ssh/dod_vps`; key-based root login tested |
+| Deployment user | `deploy` created with `sudo` and Docker access; key login and `hello-world` tested |
+| Application directory | `/opt/dod` created for `deploy` during user setup |
+| Hostname | `dodop.duckdns.org` registered; DNS lookup returned `37.27.148.183` |
+| Hetzner firewall | User confirmed the firewall is configured and attached with SSH restricted to their IP and ports 80/443 public |
+| Key-only SSH / disable root SSH | **Postponed**; do not assume password or root login has been disabled |
+| Production application and HTTPS | Not deployed or verified yet |
+| Production backups and GitHub deployment secrets | Not configured or verified yet |
+
+This is a record of confirmed setup progress, not a live server status check. The instructions below let you repeat the setup; skip completed steps on the existing VPS.
+
+### Step 1: Create and locate the server
+
+In Hetzner Console, open a project and its **Servers** list. A project groups resources; it is not itself a running server. Check existing projects before creating another paid server.
+
+For this app, choose a small x86 / Intel / AMD cloud server, Ubuntu 26.04 LTS, and public IPv4. The included disk is sufficient: skip additional Hetzner Volumes and leave **Cloud config / User data** empty for this manual setup. Our Docker data volume will use the included disk.
+
+Open the server's **Networking** information and copy its public IPv4 address. It contains four numbers separated by dots. In the commands below, replace `SERVER_IP` with that address.
+
+### Step 2: Connect from your Mac
+
+Open **View → Tool Windows → Terminal** in Rider. Run this on your Mac:
+
+```sh
+ssh root@SERVER_IP
+```
+
+On the first connection, SSH displays the server's host-key fingerprint. Verify it using Hetzner's web console before accepting it. For an Ed25519 host key, the server console can display its fingerprint with:
+
+```sh
+ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
+```
+
+If you created the server without an SSH key, enter the root password from Hetzner's email when prompted. Password input is invisible: no characters or dots appear. Follow any prompt to change the initial password. Never include passwords or private keys in this README, Git, or chat.
+
+If you selected an SSH key when creating the server, use its private-key path instead:
+
+```sh
+ssh -i ~/.ssh/dod_vps root@SERVER_IP
+```
+
+After login, a prompt such as `root@dod-production:~#` means subsequent commands run **on the VPS**. Run `exit` to return to your Mac. Closing the SSH connection does not stop the server or Docker containers.
+
+### Step 3: Confirm Ubuntu
+
+In the server's SSH session:
+
+```sh
+cat /etc/os-release
+```
+
+For our server, `PRETTY_NAME` reported `Ubuntu 26.04 LTS`. These instructions use Docker's Ubuntu package repository; do not use them unchanged for another Linux distribution.
+
+### Step 4: Install prerequisites and the signing key
+
+Run each block below **on the VPS as root**. No `sudo` prefix is needed in this session. If a command fails, resolve that error before continuing.
+
+```sh
+apt update
+apt install -y ca-certificates curl
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+chmod a+r /etc/apt/keyrings/docker.asc
+```
+
+`apt update` refreshes the available package list; it does not upgrade every installed package. `curl` downloads files, and `ca-certificates` provides trusted certificates for HTTPS. Docker's signing key lets the package manager verify packages from its repository.
+
+### Step 5: Add Docker's package repository
+
+Paste the **entire block**, including the final `EOF`, into the server terminal:
+
+```sh
+cat > /etc/apt/sources.list.d/docker.sources <<EOF
+Types: deb
+URIs: https://download.docker.com/linux/ubuntu
+Suites: $(. /etc/os-release && echo "$VERSION_CODENAME")
+Components: stable
+Architectures: $(dpkg --print-architecture)
+Signed-By: /etc/apt/keyrings/docker.asc
+EOF
+```
+
+This creates a package-source file. The shell reads Ubuntu's release codename and the server's CPU architecture automatically. The `EOF` markers delimit a multiline block; they are not commands to run separately.
+
+### Step 6: Install and start Docker
+
+```sh
+apt update
+apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+systemctl enable --now docker
+```
+
+The second `apt update` includes the repository just added. The packages provide the Docker Engine, command-line client, container runtime, image builder, and Compose plugin. `systemctl enable --now docker` starts Docker immediately and enables it at server boot.
+
+### Step 7: Verify the installation
+
+```sh
+docker run --rm hello-world
+docker compose version
+```
+
+The first command downloads and runs a small test container. Expect **Hello from Docker!**. `--rm` removes that test container after it exits. The second command should print the Compose plugin version.
+
+These checks passed on our VPS. They confirm Docker can run containers; they do not mean the DOD website has been deployed.
+
+### Step 8: Set up your SSH key — completed
+
+Keep the existing server session open. In a **new local terminal on your Mac**, generate a key:
+
+```sh
+ssh-keygen -t ed25519 -f ~/.ssh/dod_vps -C "dod-vps-admin"
+```
+
+Choose a passphrase. If that filename already exists, do not overwrite the key. The private key stays on your Mac; only the `.pub` file is copied to the server.
+
+For an initially password-based server, copy the public key from your Mac:
+
+```sh
+cat ~/.ssh/dod_vps.pub | ssh root@SERVER_IP 'mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys'
+```
+
+Enter the server's root password when prompted. Test a new connection:
+
+```sh
+ssh -i ~/.ssh/dod_vps root@SERVER_IP
+```
+
+This key-based login worked for our VPS. A key passphrase prompt is normal and is different from a server password prompt. Adding a key does not disable password authentication.
+
+### Step 9: Create the deployment user — completed
+
+In the **root session on the VPS**, after Docker is installed:
+
+```sh
+adduser deploy
+usermod -aG sudo,docker deploy
+install -d -m 700 -o deploy -g deploy /home/deploy/.ssh
+install -m 600 -o deploy -g deploy /root/.ssh/authorized_keys /home/deploy/.ssh/authorized_keys
+install -d -m 750 -o deploy -g deploy /opt/dod
+```
+
+Choose a password for `deploy`; optional personal details can be left blank. The commands authorize the same public key for this user and create the application directory. Docker group membership effectively grants administrator-level access.
+
+In a **new Mac terminal**, connect as the new user:
+
+```sh
+ssh -i ~/.ssh/dod_vps deploy@SERVER_IP
+```
+
+Then, **inside that server session**, test:
+
+```sh
+docker run --rm hello-world
+```
+
+Both the `deploy` login and this Docker test succeeded. Use `deploy` for subsequent application setup; its account password is used when `sudo` requests one.
+
+### Step 10: Register a hostname — completed
+
+We chose a free [DuckDNS](https://www.duckdns.org/) hostname instead of buying a domain:
+
+1. Sign in to DuckDNS and choose an available name.
+2. Set its IPv4 field to the **VPS address**, replacing any automatically detected home address.
+3. Save the update. Keep the DuckDNS account token private.
+
+Our hostname is **`dodop.duckdns.org`**, pointing to **`37.27.148.183`**. To check it from your Mac:
+
+```sh
+dig +short A dodop.duckdns.org
+dig +short AAAA dodop.duckdns.org
+```
+
+The verified A record returned the VPS address; no AAAA record was returned. DNS pointing at the server does not itself deploy the website or enable HTTPS. Later, set `DOMAIN=dodop.duckdns.org` in the VPS's `/opt/dod/.env` so Caddy can configure HTTPS.
+
+### Step 11: Configure the firewall — confirmed
+
+The user confirmed the Hetzner firewall setup. These are the rules used for this stage:
+
+In **Hetzner Console → project → Firewalls → Create Firewall**, use these inbound rules:
+
+| Protocol | Port | Source | Purpose |
+| --- | --- | --- | --- |
+| TCP | 22 | Your Mac's current public IPv4 with `/32` | SSH administration |
+| TCP | 80 | Any IPv4 and IPv6 | Certificate validation and HTTP redirects |
+| TCP | 443 | Any IPv4 and IPv6 | HTTPS website |
+
+Find your Mac's public IPv4 in a **local terminal**, not in the SSH session:
+
+```sh
+curl -4 https://api.ipify.org
+```
+
+For example, if it reports `203.0.113.10`, use `203.0.113.10/32` for port 22. Leave outbound traffic unrestricted. Name the firewall `dod-production` and attach it to the server. Do not expose port 8080 publicly.
+
+Keep the current SSH session open and test another connection from your Mac after applying the firewall:
+
+```sh
+ssh -i ~/.ssh/dod_vps deploy@SERVER_IP
+```
+
+If your home IP changes, update the port 22 source in Hetzner Console. Website traffic on ports 80/443 remains unaffected. Allowing SSH from any IP was discussed as an alternative **after** verifying key-only authentication; that change has not been confirmed.
+
+### Step 12: Key-only SSH — deliberately postponed
+
+We discussed requiring SSH keys, disabling password and keyboard-interactive authentication, and disabling direct root SSH login. The user chose to skip this step for now. No such server configuration change is recorded as completed.
+
+Keep the restricted-IP SSH firewall approach for now. When resuming this step, keep an existing session open, validate the effective SSH configuration, reload the service, and verify a fresh `deploy` key login before closing the old session or widening port 22 access. A working SSH key by itself does not mean password login has been disabled.
+
+### Step 13: Resume application deployment — not completed
+
+Next, publish a tested image, and copy the production configuration to `/opt/dod`. The server configuration should use `DOMAIN=dodop.duckdns.org`, a certificate contact email, and a separate tracker password.
+
+Continue with [publishing the image and copying deployment files](docs/vps.md#5-publish-the-image-and-copy-deployment-files), then deploy and verify the public HTTPS address. Production data migration, backups, and GitHub deployment secrets still need their own setup and verification.
+
+Keep the server's OS security updates and backups maintained alongside the app. Installing Docker alone does not configure those tasks.
+
+Source: [Docker's official Ubuntu installation instructions](https://docs.docker.com/engine/install/ubuntu/). For an older server that already has Docker or another container runtime installed, review that guide's conflicting-package prerequisites before using the fresh-server steps above.

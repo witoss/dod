@@ -1,0 +1,51 @@
+name: Deploy to VPS
+on:
+  workflow_dispatch:
+    inputs:
+      image_sha:
+        description: Full commit SHA from a successful main-branch Verify and package run
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Verify selected release passed CI on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          IMAGE_SHA: ${{ inputs.image_sha }}
+        run: |
+          [[ "$IMAGE_SHA" =~ ^[a-f0-9]{40}$ ]] || { echo 'Use a full commit SHA.'; exit 1; }
+          gh api "repos/$REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$IMAGE_SHA&branch=main&event=push&status=success&per_page=1" \
+            --jq '.workflow_runs | length' | grep -qx 1
+      - name: Deploy the tested image over SSH
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          REPOSITORY: ${{ github.repository }}
+          IMAGE_SHA: ${{ inputs.image_sha }}
+        run: |
+          [[ "$VPS_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]] || { echo 'Set VPS_HOST to an IPv4 address or hostname.'; exit 1; }
+          [[ "$VPS_USER" =~ ^[a-z_][a-z0-9_-]*$ ]] || { echo 'Set VPS_USER.'; exit 1; }
+          [[ -n "$VPS_SSH_KEY" && -n "$VPS_KNOWN_HOSTS" ]] || { echo 'Configure SSH secrets.'; exit 1; }
+          umask 077
+          ssh_dir=$(mktemp -d)
+          trap 'rm -rf "$ssh_dir"' EXIT
+          printf '%s\n' "$VPS_SSH_KEY" > "$ssh_dir/key"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > "$ssh_dir/known_hosts"
+          image="ghcr.io/${REPOSITORY,,}:$IMAGE_SHA"
+          ssh -i "$ssh_dir/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_dir/known_hosts" \
+            -o ConnectTimeout=15 "$VPS_USER@$VPS_HOST" \
+            "bash /opt/dod/deploy.sh '$image'"

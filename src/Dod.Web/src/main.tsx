@@ -2,12 +2,14 @@ import { StrictMode, useEffect, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
 import { localDate } from "./date";
 import "./style.css";
+import { EatenForm } from "./calories/EatenForm";
 import { CalorieBalance } from "./calories/CalorieBalance";
 
 type Entry = {
   date: string;
   weightKg: number | null;
   caloriesBurned: number | null;
+  caloriesEaten: number | null;
 };
 async function loadEntries(): Promise<Entry[]> {
   const response = await fetch("/api/entries/");
@@ -93,6 +95,12 @@ function App() {
             initial={selected?.caloriesBurned ?? null}
             onSaved={refresh}
           />
+          <EatenForm
+            key={`${date}-eaten`}
+            date={date}
+            initial={selected?.caloriesEaten ?? null}
+            onSaved={refresh}
+          />
         </div>
       )}
       {!loading && !error && (
@@ -131,6 +139,7 @@ function App() {
                   <th>Date</th>
                   <th>Weight</th>
                   <th>Calories burned</th>
+                  <th>Calories eaten</th>
                   <th>
                     <span className="sr-only">Actions</span>
                   </th>
@@ -147,6 +156,11 @@ function App() {
                       {entry.caloriesBurned === null
                         ? "—"
                         : `${entry.caloriesBurned} kcal`}
+                    </td>
+                    <td>
+                      {entry.caloriesEaten === null
+                        ? "Daily reference"
+                        : `${entry.caloriesEaten} kcal`}
                     </td>
                     <td>
                       <button

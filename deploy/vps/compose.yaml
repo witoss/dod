@@ -1,0 +1,39 @@
+name: dod-production
+services:
+  app:
+    image: ${APP_IMAGE:?Deploy a commit-tagged image with deploy.sh}
+    environment:
+      Tracker__Password: ${TRACKER_PASSWORD:?Set TRACKER_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - tracker-data:/data
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+  proxy:
+    image: caddy:2-alpine
+    environment:
+      DOMAIN: ${DOMAIN:?Set your domain in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?Set your certificate contact email in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+volumes:
+  tracker-data:
+    name: dod-production-data
+  caddy-data:
+  caddy-config:
