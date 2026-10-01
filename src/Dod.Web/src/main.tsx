@@ -1,9 +1,17 @@
 import { StrictMode, useEffect, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
 import { localDate } from "./date";
+import { kilogramsLost } from "./weight";
 import "./style.css";
 import { EatenForm } from "./calories/EatenForm";
 import { CalorieBalance } from "./calories/CalorieBalance";
+
+const revision = import.meta.env.VITE_APP_REVISION?.trim();
+const buildLabel = import.meta.env.DEV
+  ? "Development"
+  : revision
+    ? `Build ${revision.slice(0, 7)}`
+    : "Local build";
 
 type Entry = {
   date: string;
@@ -36,7 +44,7 @@ function App() {
     void refresh();
   }, []);
   const selected = entries.find((entry) => entry.date === date);
-  const weights = entries.filter((entry) => entry.weightKg !== null);
+  const lost = kilogramsLost(entries);
   return (
     <main>
       <header>
@@ -58,6 +66,22 @@ function App() {
           Make showing up a habit.
         </p>
       </section>
+      {!loading && !error && (
+        <section className="weight-summary" aria-label="Weight progress">
+          <p className="eyebrow">SINCE YOUR FIRST WEIGHT ENTRY</p>
+          <p className="weight-total" role="status">
+            <strong>{lost === null ? "—" : lost.toFixed(2)}</strong>{" "}
+            <span>kg lost</span>
+          </p>
+          <p className="weight-summary-note">
+            {lost === null
+              ? "Record your first weight to start tracking progress."
+              : lost < 0
+                ? "A negative number means weight gained."
+                : "Your first recorded weight minus your latest recorded weight."}
+          </p>
+        </section>
+      )}
       <div className="date-row">
         <h2>Log your day</h2>
         <label>
@@ -114,17 +138,6 @@ function App() {
           </div>
           <span>{entries.length} days recorded</span>
         </div>
-        {weights.length > 1 && (
-          <p className="trend">
-            Weight change since your first entry:{" "}
-            <strong>
-              {(
-                weights[0].weightKg! - weights[weights.length - 1].weightKg!
-              ).toFixed(2)}{" "}
-              kg
-            </strong>
-          </p>
-        )}
         {entries.length === 0 ? (
           <div className="empty">
             Your story starts with one check-in.
@@ -180,7 +193,12 @@ function App() {
           </div>
         )}
       </section>
-      <footer>Consistency over perfection.</footer>
+      <footer>
+        Consistency over perfection.
+        <span className="build-version" title={revision || undefined}>
+          {buildLabel}
+        </span>
+      </footer>
     </main>
   );
 }

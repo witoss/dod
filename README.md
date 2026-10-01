@@ -73,6 +73,10 @@ The first build downloads dependencies and takes longer. Later builds reuse cach
 
 ### Everyday commands
 
+The page footer identifies the displayed release, for example **Build a0c3377**. Compare it with the commit SHA in the successful GitHub deployment; hover over the label to see the full SHA. Refresh the page after deployment to load the new frontend. This identifies the loaded frontend, not a live check for newer releases.
+
+GitHub Actions passes the full commit SHA as Docker's `APP_REVISION` build argument. Vite embeds it in the frontend during the image build, so no runtime secret or server configuration is needed. The development server displays **Development**; production builds without a revision (including the default local Docker build) display **Local build**.
+
 | Task | Command |
 | --- | --- |
 | Start the existing app | `docker compose up -d` |
@@ -96,6 +100,10 @@ Press Ctrl+C to stop following logs; the app keeps running. Both stopping and re
 The two saves are independent: saving calories preserves the weight for that date. Saving a measurement again replaces its previous value. A missing value is different from a recorded zero.
 
 Use a consistent definition of calories burned, such as the total daily number reported by your watch. The app records the number you provide; it does not estimate it.
+
+### Kilograms lost
+
+The main page shows **kg lost**: your earliest recorded weight minus your latest recorded weight, ordered by entry date across the whole journal. For example, 90 kg followed by 87.5 kg shows **2.50 kg lost**. A negative value means weight gained. Days without weight are ignored; one weight shows 0.00, and no weights shows a dash. Saving or correcting a weight updates the summary. Selecting a date or calorie chart period does not limit this all-time total.
 
 ### Configure the reference and read the graph
 

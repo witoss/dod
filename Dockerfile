@@ -3,7 +3,8 @@ WORKDIR /web
 COPY src/Dod.Web/package*.json ./
 RUN npm ci
 COPY src/Dod.Web/ ./
-RUN npm run build
+ARG APP_REVISION
+RUN VITE_APP_REVISION="$APP_REVISION" npm run build
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /source
