@@ -1,5 +1,9 @@
 name: Deploy to VPS
 on:
+  workflow_run:
+    workflows: [Verify and package]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       image_sha:
@@ -14,27 +18,50 @@ concurrency:
   cancel-in-progress: false
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/main'
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     environment: production
+    env:
+      IMAGE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.image_sha }}
     steps:
       - name: Verify selected release passed CI on main
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-          IMAGE_SHA: ${{ inputs.image_sha }}
         run: |
           [[ "$IMAGE_SHA" =~ ^[a-f0-9]{40}$ ]] || { echo 'Use a full commit SHA.'; exit 1; }
           gh api "repos/$REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$IMAGE_SHA&branch=main&event=push&status=success&per_page=1" \
             --jq '.workflow_runs | length' | grep -qx 1
+      - name: Skip superseded automatic releases
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TRIGGER: ${{ github.event_name }}
+        run: |
+          if [[ "$TRIGGER" == workflow_run ]]; then
+            current_sha=$(gh api "repos/$REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+            if [[ "$IMAGE_SHA" != "$current_sha" ]]; then
+              echo 'A newer commit is on main; skipping this automatic release.'
+              echo 'deploy=false' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          echo 'deploy=true' >> "$GITHUB_OUTPUT"
       - name: Deploy the tested image over SSH
+        if: steps.release.outputs.deploy == 'true'
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
           REPOSITORY: ${{ github.repository }}
-          IMAGE_SHA: ${{ inputs.image_sha }}
         run: |
           [[ "$VPS_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]] || { echo 'Set VPS_HOST to an IPv4 address or hostname.'; exit 1; }
           [[ "$VPS_USER" =~ ^[a-z_][a-z0-9_-]*$ ]] || { echo 'Set VPS_USER.'; exit 1; }

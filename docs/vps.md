@@ -1,6 +1,6 @@
 # Deploy DOD to a VPS, step by step
 
-This guide uses a Hetzner Cloud server, Ubuntu 26.04 LTS, Docker Compose, and Caddy. The deployment files are prepared in [`deploy/vps`](../deploy/vps). For confirmed progress on our existing VPS, see the [README setup status](../README.md#current-progress--30-september-2026). The server and DuckDNS hostname are set up; application deployment remains pending.
+This guide uses a Hetzner Cloud server, Ubuntu 26.04 LTS, Docker Compose, and Caddy. The deployment files are prepared in [`deploy/vps`](../deploy/vps). For confirmed progress on our existing VPS, see the [README setup status](../README.md#current-progress--1-october-2026). The user confirmed HTTPS health and a successful manual GitHub deployment; the automatic trigger is prepared locally and awaits its first run.
 
 ## 1. Understand what we are setting up
 
@@ -16,7 +16,7 @@ flowchart LR
 
 Caddy obtains and renews HTTPS certificates for your domain and forwards requests to the application. The app's port 8080 is available only on the server's loopback interface for health checks. The database volume is `dod-production-data`, separate from your Mac's Docker volume. Caddy also has persistent volumes so its certificate state survives container replacement.
 
-The first deployment is manual. A separate, manually triggered GitHub workflow can deploy subsequent tested releases after the server is ready. It never purchases or creates infrastructure.
+The first deployment is manual. A separate GitHub workflow deploys successful main-branch push builds automatically and also supports manual releases. It never purchases or creates infrastructure.
 
 ## 2. Create the server — in your Hetzner account
 
@@ -74,7 +74,7 @@ install -m 600 -o deploy -g deploy /root/.ssh/authorized_keys /home/deploy/.ssh/
 install -d -m 750 -o deploy -g deploy /opt/dod
 ```
 
-`adduser` prompts for a local account password. Test a **second** SSH session as `deploy` before changing SSH authentication settings. Key-only SSH and disabling direct root SSH were deliberately postponed for our current setup. When that step is resumed, keep the original session open until a new key-based login is verified. Keep Ubuntu security updates enabled and plan reboots when required.
+`adduser` prompts for a local account password. Test a **second** SSH session as `deploy` before changing SSH authentication settings. Key-only SSH and disabling direct root SSH are now verified for our current setup. On a new server, keep the original session open until a new key-based login is verified. Keep Ubuntu security updates enabled and plan reboots when required.
 
 If Docker is already installed and the README verification commands passed, skip reinstalling it. Otherwise, use the [README's exact commands](../README.md#step-4-install-prerequisites-and-the-signing-key) to install Docker Engine and Compose, based on Docker's [official Ubuntu apt-repository instructions](https://docs.docker.com/engine/install/ubuntu/#install-using-the-apt-repository). This installs Docker Engine on Linux; do not install Docker Desktop on the server.
 
@@ -100,7 +100,7 @@ Docker group membership effectively grants administrator-level access. Keep this
 
 ## 4. Point a domain at the server
 
-Our current hostname is **`dodop.duckdns.org`**, with an A record verified as **`37.27.148.183`**. Set `DOMAIN=dodop.duckdns.org` in the production configuration; HTTPS has not yet been deployed.
+Our current hostname is **`dodop.duckdns.org`**, with an A record verified as **`37.27.148.183`**. Set `DOMAIN=dodop.duckdns.org` in the production configuration; the user has verified the public HTTPS health endpoint.
 
 For a new setup, use a DuckDNS hostname or a domain you own, for example `tracker.your-domain.com`. At your DNS provider, add an **A record** for `tracker` pointing to the server's public IPv4 address. Add an AAAA record only if the corresponding IPv6 address and firewall configuration work.
 
@@ -197,7 +197,7 @@ docker run --rm --network none \
 
 Start the corresponding app image with this restored volume at `/data`, a separate password, and a loopback-only test port. Check entries and settings before considering a production restore. A real restore requires stopping production and intentionally replacing its data with the chosen backup; it may discard changes made since that backup. Keep ownership from the archive so the non-root app can write its database.
 
-## 9. Enable the manual GitHub deployment workflow
+## 9. Enable the GitHub deployment workflow
 
 Do this after a manual server deployment works. The prepared workflow is [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml).
 
@@ -218,7 +218,13 @@ The cloud firewall must permit SSH from the workflow runner. Standard GitHub-hos
 
 Run **Actions → Deploy to VPS → Run workflow**, choose branch `main`, and enter the full SHA of the desired successful `main` push build. The workflow checks that CI succeeded for that SHA, then invokes `/opt/dod/deploy.sh` over SSH. The server pulls from GHCR using its own read-only registry credentials. The app password stays on the server.
 
-This is intentionally a manual release step, not automatic deployment on every push. SSH credentials for a Docker-enabled user have broad server access, so limit who can edit workflows, approve deployments, and use the production secrets.
+After a successful push-triggered **Verify and package** run on `main`, `workflow_run` also starts deployment automatically. The job checks the source repository, event, branch, and success result, and deploys the CI run's `head_sha`. Pull requests and manual CI runs cannot trigger automatic deployment. It skips an automatic release if `main` has moved on when checked, while manual releases can still select an older tested SHA. Deployments share a concurrency group and do not cancel an active deployment. Environment approval rules still apply.
+
+The workflow must be pushed to the default branch before its automatic trigger is active. Check both CI and deployment after that push; the first automatic run is still pending verification. See [GitHub workflow_run documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run).
+
+Our server now permits TCP 22 from any IPv4 after key-only authentication and disabled root login were verified. The four environment secrets are configured, and the user confirmed a green manual deployment.
+
+ SSH credentials for a Docker-enabled user have broad server access, so limit who can edit workflows, approve deployments, and use the production secrets.
 
 Deployment scripts and proxy configuration are installed separately with `scp`. Image deployment does not update those files. Review and copy infrastructure changes explicitly before using them.
 

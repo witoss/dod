@@ -15,6 +15,7 @@ A personal journal for morning weight and evening calories burned, built with .N
 - [9. API reference](#9-api-reference)
 - [10. Troubleshooting](#10-troubleshooting)
 - [11. Set up a fresh Ubuntu VPS](#11-set-up-a-fresh-ubuntu-vps)
+- [12. Future ideas](#12-future-ideas)
 - [VPS deployment tutorial](docs/vps.md)
 
 ## 1. Install and run the app
@@ -357,7 +358,7 @@ The workflow is: edit with hot reload, run tests, then test the production image
 
 **Continuous delivery** produces a deployable artifact after checks pass. Here, the artifact is a Docker image stored in GitHub Container Registry (GHCR).
 
-**Continuous deployment** automatically updates a running environment. The app build workflow does not do that. A separate, manually triggered **Deploy to VPS** workflow is prepared for a configured server. Publishing an image alone does not update your local container or a hosted website.
+**Continuous deployment** automatically updates a running environment. The app build workflow does not do that. The separate **Deploy to VPS** workflow automatically deploys after **Verify and package** succeeds for a push to `main`. It also supports manual releases. Local containers are not updated by GitHub.
 
 ### Follow the current workflow
 
@@ -378,7 +379,7 @@ The `test` job installs .NET and Node.js on a temporary GitHub runner, then runs
 | Trigger | Checks and image build | Publish to GHCR | Deploy a website |
 | --- | --- | --- | --- |
 | Pull request | Yes | No | No |
-| Push to `main` | Yes | Yes | No |
+| Push to `main` | Yes | Yes | After successful CI, through Deploy to VPS |
 | Manual workflow run | Yes | No | No |
 
 A published image is named `ghcr.io/<owner>/<repository>:<commit-sha>`. The SHA identifies the source revision used for the build, so you can select a specific release instead of relying on an ambiguous `latest` tag.
@@ -397,9 +398,19 @@ Configure branch protection or a ruleset to require the checks before merging, w
 
 ### Deploy to the VPS
 
-We have chosen a Hetzner VPS. The production Compose file, Caddy HTTPS configuration, backup/deployment scripts, and manual GitHub deployment workflow are prepared. The Hetzner server has been created and Docker has been verified on Ubuntu 26.04 LTS. The DuckDNS hostname `dodop.duckdns.org` has been registered and its IPv4 record verified. HTTPS and application deployment are still pending.
+The app is deployed on our Hetzner VPS at **https://dodop.duckdns.org**. The user confirmed the public health check and a successful manual GitHub deployment. The `production` environment has all four SSH secrets configured.
 
-Follow the [VPS deployment tutorial](docs/vps.md) in order: create the server, configure SSH and DNS, install Docker, deploy a successful CI image manually, verify HTTPS, test backups, and then configure the GitHub deployment secrets. The manual workflow verifies that the selected commit passed the main-branch CI pipeline before deploying it.
+The automatic workflow added here follows this sequence:
+
+```text
+Push to main → tests → publish commit-tagged image → SSH deployment → backup → update → health check
+```
+
+It uses the triggering CI run's commit SHA, not the deployment workflow's own SHA. Failed CI, pull requests, and manually triggered CI runs do not deploy automatically. A release is skipped if a newer commit is already on `main` when the deployment checks it. Deployment runs are serialized, and an active deployment is not cancelled by a newer run. The manual option still accepts a selected successful main-branch push SHA.
+
+Commit and push this workflow change to `main` to activate it, then verify both workflows turn green. That first automatic run is not yet verified. Any required reviewers configured on the `production` environment still need to approve deployments.
+
+Follow the [VPS deployment tutorial](docs/vps.md) to reproduce the setup. Deployment scripts and Caddy configuration still require a separate file copy when changed; image deployment updates the application only.
 
 See [docs/devops.md](docs/devops.md) for the broader learning path. Database compatibility matters during rollback—an older image cannot automatically undo a schema change.
 
@@ -452,7 +463,7 @@ For application errors, start with `docker compose logs -f app` and check `http:
 
 This records the server setup completed for this project on **Ubuntu 26.04 LTS**, including the initial password-based SSH connection. Use it when setting up a replacement server. Docker Engine and Compose are installed on the VPS; Docker Desktop is only needed on your Mac for local containers.
 
-### Current progress — 30 September 2026
+### Current progress — 1 October 2026
 
 | Item | Status |
 | --- | --- |
@@ -463,10 +474,11 @@ This records the server setup completed for this project on **Ubuntu 26.04 LTS**
 | Deployment user | `deploy` created with `sudo` and Docker access; key login and `hello-world` tested |
 | Application directory | `/opt/dod` created for `deploy` during user setup |
 | Hostname | `dodop.duckdns.org` registered; DNS lookup returned `37.27.148.183` |
-| Hetzner firewall | User confirmed the firewall is configured and attached with SSH restricted to their IP and ports 80/443 public |
-| Key-only SSH / disable root SSH | **Postponed**; do not assume password or root login has been disabled |
-| Production application and HTTPS | Not deployed or verified yet |
-| Production backups and GitHub deployment secrets | Not configured or verified yet |
+| Hetzner firewall | User confirmed TCP 22 allows any IPv4 after key-only SSH was verified; ports 80/443 remain public |
+| Key-only SSH / disable root SSH | Verified: public-key authentication required; password, keyboard-interactive, and root login disabled |
+| Production application and HTTPS | Deployed; user confirmed HTTPS health returns healthy |
+| GitHub deployment | Four production secrets saved; manual deployment passed; automatic trigger added locally, first run pending |
+| Production backups | Deployment script creates backups before updates; restore, scheduling, and off-host storage still need verification/setup |
 
 This is a record of confirmed setup progress, not a live server status check. The instructions below let you repeat the setup; skip completed steps on the existing VPS.
 
@@ -659,20 +671,52 @@ Keep the current SSH session open and test another connection from your Mac afte
 ssh -i ~/.ssh/dod_vps deploy@SERVER_IP
 ```
 
-If your home IP changes, update the port 22 source in Hetzner Console. Website traffic on ports 80/443 remains unaffected. Allowing SSH from any IP was discussed as an alternative **after** verifying key-only authentication; that change has not been confirmed.
+For the initial restricted-IP setup, update the port 22 source if your home IP changes. Our server now permits any IPv4 on TCP 22 so GitHub runners can connect, after verifying key-only SSH as described below.
 
-### Step 12: Key-only SSH — deliberately postponed
+### Step 12: Key-only SSH — completed
 
-We discussed requiring SSH keys, disabling password and keyboard-interactive authentication, and disabling direct root SSH login. The user chose to skip this step for now. No such server configuration change is recorded as completed.
+On the VPS, we created `/etc/ssh/sshd_config.d/00-dod-security.conf` with:
 
-Keep the restricted-IP SSH firewall approach for now. When resuming this step, keep an existing session open, validate the effective SSH configuration, reload the service, and verify a fresh `deploy` key login before closing the old session or widening port 22 access. A working SSH key by itself does not mean password login has been disabled.
+```text
+PubkeyAuthentication yes
+AuthenticationMethods publickey
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin no
+```
 
-### Step 13: Resume application deployment — not completed
+Keep the existing session open, run `sudo sshd -t && sudo systemctl reload ssh`, then test a new `deploy` key login from your Mac before closing the old session. Verify the effective settings with `sudo sshd -T`. The user confirmed these settings and a new login before widening the firewall's TCP 22 source to `0.0.0.0/0`.
 
-Next, publish a tested image, and copy the production configuration to `/opt/dod`. The server configuration should use `DOMAIN=dodop.duckdns.org`, a certificate contact email, and a separate tracker password.
+### Step 13: Application and GitHub deployment — manual run completed
 
-Continue with [publishing the image and copying deployment files](docs/vps.md#5-publish-the-image-and-copy-deployment-files), then deploy and verify the public HTTPS address. Production data migration, backups, and GitHub deployment secrets still need their own setup and verification.
+Production configuration is in `/opt/dod`, with `DOMAIN=dodop.duckdns.org`, a certificate contact email, and a separate tracker password. The user confirmed the public HTTPS health endpoint and a green manual GitHub deployment.
+
+A separate automation key, `~/.ssh/dod_github_actions`, was created on the Mac, and its public key was added to the server's `deploy` authorized keys. The GitHub `production` environment contains `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, and `VPS_KNOWN_HOSTS`. Never copy their private values into this tutorial.
+
+The automatic trigger is now prepared in the workflow; push it to `main` and verify its first run. See [the deployment workflow guide](docs/vps.md#9-enable-the-github-deployment-workflow). Production data migration and backup restore checks remain separate tasks.
 
 Keep the server's OS security updates and backups maintained alongside the app. Installing Docker alone does not configure those tasks.
 
 Source: [Docker's official Ubuntu installation instructions](https://docs.docker.com/engine/install/ubuntu/). For an older server that already has Docker or another container runtime installed, review that guide's conflicting-package prerequisites before using the fresh-server steps above.
+
+## 12. Future ideas
+
+### Friends and a shared weight-progress chart
+
+**Planned idea; not implemented.** Add friends and compare how much weight each person has lost over a selected period, with one line per person on the same chart. The purpose is to motivate each other through shared progress.
+
+For an initial version:
+
+- Send a friend invitation that the other person can accept or decline; allow removing a friend later.
+- Let each person opt in to sharing their progress with accepted friends.
+- Choose a common date range and show kilograms lost relative to each person's first recorded weight within that range: `weight lost = starting weight − recorded weight`. For example, 90 kg to 88 kg means 2 kg lost; weight gain produces a negative value.
+- Label each person's baseline date when measurements start on different days. Show missing measurements as gaps, and show an empty state when there are no measurements in the period.
+- Share progress rather than absolute weights or calorie entries by default. Avoid treating faster weight loss as a better result or adding a competitive leaderboard.
+
+The chart can reuse the existing graph approach, but the current shared `tracker` login cannot distinguish people. Multi-user access is the main prerequisite:
+
+- **Authentication — who are you?** Replace the shared password with individual accounts using an established identity solution, such as ASP.NET Core Identity or an external identity provider, with sign-in, sign-out, and account recovery.
+- **Authorization — what may you access?** Associate journal entries and calorie settings with their owner. Enforce ownership and accepted-friend sharing permissions in the API on every request, rather than relying on hidden UI controls. Friends may read only the progress explicitly shared with them and cannot edit another person's journal.
+- **Migration and verification:** Assign existing journal data to the original owner's account during migration. Test that users cannot access another account's private entries, pending invitations grant no access, and removing a friendship or disabling sharing revokes access to the comparison data.
+
+Implement individual accounts and private journals first, then invitations and sharing permissions, then the comparison chart. Decide the final identity provider and sharing details when this feature is scheduled.
