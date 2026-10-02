@@ -163,6 +163,20 @@ docker compose --env-file .env --env-file release.env restart app
 
 If the first deployment fails before `release.env` exists, supply `APP_IMAGE=ghcr.io/witoss/dod:COMMIT_SHA` before the Compose command and omit `--env-file release.env`. Do not print `docker compose config` into shared logs: its expanded output includes secrets. Use `config --quiet` for validation.
 
+### HTTPS session-token fix for existing deployments
+
+The app must recognize that the browser used HTTPS even though Caddy's connection to ASP.NET uses HTTP. The deployment Compose file assigns Caddy `172.30.47.3` on a dedicated `172.30.47.0/29` Docker network and supplies that address as `ReverseProxy__KnownProxies__0`. The API processes `X-Forwarded-Proto` only from trusted proxies before authentication/antiforgery. Secure cookies remain required. If this subnet overlaps an existing network on another server, choose an unused subnet and update both the Caddy address and trusted-proxy setting together.
+
+For an existing VPS, **copy the updated Compose file before pushing this fix**, since the image deployment workflow does not copy infrastructure files. On your Mac, from the repository root:
+
+```sh
+scp -i ~/.ssh/dod_vps deploy/vps/compose.yaml deploy@37.27.148.183:/opt/dod/compose.yaml
+```
+
+Then commit and push the application fix (including its new regression tests). Once CI and deployment succeed, refresh the website and try **Claim existing journal** again. The deployment recreates containers on the new network while retaining the existing database and certificate volumes; no `docker compose down -v` is needed.
+
+A failing `GET /api/account/csrf` with HTTP 500 can produce “Could not verify session” before the claim request is sent. A healthy `/health` alone does not test HTTPS session setup. Production regression tests cover the full secure token → claim → authenticated session sequence and rejection of an untrusted proxy's forwarded scheme. See [Microsoft's forwarded-header trust guidance](https://learn.microsoft.com/en-us/aspnet/core/breaking-changes/8/forwarded-headers-unknown-proxies?view=aspnetcore-10.0).
+
 ## 7. Transfer your current journal, if desired
 
 The server starts with an empty journal. Do not try to move a live `dod.db` file alone: SQLite may have recent data in its WAL file.

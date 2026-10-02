@@ -4,6 +4,9 @@ services:
     image: ${APP_IMAGE:?Deploy a commit-tagged image with deploy.sh}
     environment:
       Tracker__Password: ${TRACKER_PASSWORD:?Set TRACKER_PASSWORD in .env}
+      ReverseProxy__KnownProxies__0: "172.30.47.3"
+    networks:
+      - proxy-link
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
@@ -16,6 +19,9 @@ services:
         max-file: "3"
   proxy:
     image: caddy:2-alpine
+    networks:
+      proxy-link:
+        ipv4_address: 172.30.47.3
     environment:
       DOMAIN: ${DOMAIN:?Set your domain in .env}
       ACME_EMAIL: ${ACME_EMAIL:?Set your certificate contact email in .env}
@@ -32,6 +38,11 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+networks:
+  proxy-link:
+    ipam:
+      config:
+        - subnet: 172.30.47.0/29
 volumes:
   tracker-data:
     name: dod-production-data

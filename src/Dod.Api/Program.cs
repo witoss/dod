@@ -6,11 +6,20 @@ using Dod.Api.Social;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.HttpOverrides;
 
 var builder = WebApplication.CreateBuilder(args);
 var allowHttp = builder.Environment.IsDevelopment() || builder.Configuration.GetValue<bool>("Authentication:AllowHttp");
 builder.Services.AddProblemDetails();
 builder.Services.AddHttpContextAccessor();
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedProto;
+    options.ForwardLimit = 1;
+    // Only configured proxy addresses may describe the browser's original scheme.
+    foreach (var proxy in builder.Configuration.GetSection("ReverseProxy:KnownProxies").GetChildren())
+        options.KnownProxies.Add(System.Net.IPAddress.Parse(proxy.Value!));
+});
 builder.Services.AddSingleton<EntryStore>();
 builder.Services.AddSingleton<SocialStore>();
 builder.Services.AddSingleton(TimeProvider.System);
@@ -44,6 +53,7 @@ builder.Services.AddRateLimiter(options =>
 builder.Services.Configure<Microsoft.AspNetCore.Routing.RouteHandlerOptions>(options => options.ThrowOnBadRequest = false);
 var app = builder.Build();
 app.UseExceptionHandler();
+app.UseForwardedHeaders();
 await app.Services.GetRequiredService<EntryStore>().InitializeAsync();
 app.UseDefaultFiles();
 app.UseStaticFiles();
