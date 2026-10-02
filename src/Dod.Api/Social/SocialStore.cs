@@ -7,6 +7,8 @@ public record Person(string Id, string Nickname, bool HasAvatar);
 public record Friend(Person User, string Status, bool Incoming);
 public record Challenge(string Id, string OwnerId, string Name, string StartDate, string EndDate, string Status);
 public record Standing(string Id, string Nickname, bool HasAvatar, decimal? KgLost, int Measurements, string? BaselineDate, string? LatestDate, int? Rank);
+public record ChallengeWeight(string Date, decimal WeightKg);
+public record ParticipantWeights(string Id, string Nickname, List<ChallengeWeight> Weights);
 public sealed class SocialStore(EntryStore entries, TimeProvider clock)
 {
     public string UserId => entries.UserId;
@@ -66,5 +68,24 @@ public sealed class SocialStore(EntryStore entries, TimeProvider clock)
             return new Standing(p.Id,p.Nickname,p.HasAvatar,lost,weights.Count,weights.FirstOrDefault().Date,weights.LastOrDefault().Date,null);
         }).OrderByDescending(s => s.KgLost.HasValue).ThenByDescending(s => s.KgLost).ThenBy(s => s.Nickname, StringComparer.OrdinalIgnoreCase).ToList();
         return standings.Select(s => s with { Rank = s.KgLost.HasValue ? 1 + standings.Count(other => other.KgLost > s.KgLost) : null }).ToList();
+    }
+
+    public async Task<List<ParticipantWeights>> WeightHistory(string id)
+    {
+        // Entries has a (UserId, Date) primary key: subsequent saves replace that day's weight.
+        var rows = await Query("""
+            SELECT u.Id,u.Nickname,e.Date,e.WeightKg FROM Participants p
+            JOIN Users u ON u.Id=p.UserId
+            JOIN Challenges c ON c.Id=p.ChallengeId
+            LEFT JOIN Entries e ON e.UserId=p.UserId AND e.WeightKg IS NOT NULL
+                AND e.Date>=c.StartDate AND e.Date<c.EndDate AND e.Date<=$today
+            WHERE c.Id=$id AND p.Status='accepted'
+                AND EXISTS (SELECT 1 FROM Participants viewer WHERE viewer.ChallengeId=c.Id
+                    AND viewer.UserId=$me AND viewer.Status='accepted')
+            ORDER BY u.NormalizedNickname,e.Date
+            """, r => (Id: r.GetString(0), Nickname: r.GetString(1),
+                Date: r.IsDBNull(2) ? null : r.GetString(2), Weight: r.IsDBNull(3) ? (decimal?)null : r.GetDecimal(3)), ("$id", id));
+        return rows.GroupBy(r => (r.Id, r.Nickname)).Select(g => new ParticipantWeights(g.Key.Id, g.Key.Nickname,
+            g.Where(r => r.Date is not null).Select(r => new ChallengeWeight(r.Date!, r.Weight!.Value)).ToList())).ToList();
     }
 }

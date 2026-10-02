@@ -157,5 +157,49 @@ public sealed class SocialTests : IDisposable
         Assert.Equal(png, await a.GetByteArrayAsync($"/api/avatars/{id}"));
         await a.DeleteAsync("/api/account/avatar"); Assert.Equal(HttpStatusCode.NotFound, (await b.GetAsync($"/api/avatars/{id}")).StatusCode);
     }
+    [Fact]
+    public async Task ChallengeChartSharesOnlyAcceptedParticipantsAndLatestDailyWeightInWindow()
+    {
+        using var app = App();
+        using var owner = await User(app, "Owner");
+        using var friend = await User(app, "Friend");
+        using var pending = await User(app, "Pending");
+        using var outsider = await User(app, "Outsider");
+        using var anonymous = app.CreateClient();
+        await Befriend(owner, friend, "Friend");
+        await Befriend(owner, pending, "Pending");
+        var id = await Challenge(owner);
+        var ownerId = await Id(owner);
+        var friendId = await Id(friend);
+        foreach (var person in new[] { friend, pending })
+            (await owner.PostAsJsonAsync($"/api/social/challenges/{id}/invite", new { userId = await Id(person) })).EnsureSuccessStatusCode();
+        (await friend.PutAsJsonAsync($"/api/social/challenges/{id}/invitation", new { accept = true })).EnsureSuccessStatusCode();
+        foreach (var row in new[] { (Date: "2026-10-01", Weight: 99m), (Date: "2026-10-02", Weight: 90m),
+            (Date: "2026-10-02", Weight: 89.5m), (Date: "2026-10-04", Weight: 88m),
+            (Date: "2026-10-08", Weight: 87m), (Date: "2026-10-09", Weight: 86m) })
+            (await owner.PutAsJsonAsync($"/api/entries/{row.Date}/weight", new { weightKg = row.Weight })).EnsureSuccessStatusCode();
+        await pending.PutAsJsonAsync("/api/entries/2026-10-02/weight", new { weightKg = 75 });
+        var route = $"/api/social/challenges/{id}/weights";
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync(route)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await pending.GetAsync(route)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await outsider.GetAsync(route)).StatusCode);
+        var rows = (await friend.GetFromJsonAsync<List<ParticipantWeights>>(route))!;
+        Assert.Equal(2, rows.Count);
+        Assert.Empty(rows.Single(p => p.Id == friendId).Weights);
+        var first = Assert.Single(rows.Single(p => p.Id == ownerId).Weights);
+        Assert.Equal("2026-10-02", first.Date);
+        Assert.Equal(89.5m, first.WeightKg);
+        // Six days later, the last included challenge day is visible. End-date entries remain excluded.
+        clock.Now = clock.Now.AddDays(6);
+        rows = (await friend.GetFromJsonAsync<List<ParticipantWeights>>(route))!;
+        Assert.Equal(new[] { "2026-10-02", "2026-10-04", "2026-10-08" }, rows.Single(p => p.Id == ownerId).Weights.Select(w => w.Date));
+        await owner.PutAsJsonAsync("/api/entries/2026-10-04/weight", new { weightKg = 87.75m });
+        rows = (await friend.GetFromJsonAsync<List<ParticipantWeights>>(route))!;
+        Assert.Equal(87.75m, rows.Single(p => p.Id == ownerId).Weights[1].WeightKg);
+        await friend.DeleteAsync($"/api/social/challenges/{id}/participation");
+        Assert.Equal(HttpStatusCode.NotFound, (await friend.GetAsync(route)).StatusCode);
+        Assert.Single((await owner.GetFromJsonAsync<List<ParticipantWeights>>(route))!);
+    }
+
     public void Dispose() { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); if (Directory.Exists(directory)) Directory.Delete(directory, true); }
 }

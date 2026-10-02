@@ -97,5 +97,10 @@ public static class SocialEndpoints
             var allowed = await store.Query("SELECT 1 FROM Participants WHERE ChallengeId=$id AND UserId=$me AND Status='accepted'",r => r.GetInt32(0),("$id",id));
             return allowed.Count == 0 ? Results.NotFound() : Results.Ok(await store.Leaderboard(id));
         });
+        group.MapGet("/challenges/{id}/weights", async (string id, SocialStore store) =>
+        {
+            var history = await store.WeightHistory(id);
+            return history.Count == 0 ? Results.NotFound() : Results.Ok(history);
+        });
     }
 }

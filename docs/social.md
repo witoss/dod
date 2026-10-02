@@ -26,7 +26,7 @@ Nickname changes preserve friendships because relationships use an internal user
 
 Any signed-in user can create a named weight-loss challenge, choose a start date, and set 1–52 weeks. Start dates range from today to one year ahead. Challenge boundaries use UTC calendar dates; the journal still records the date you explicitly select.
 
-The creator joins automatically. Every accepted participant may invite **their own accepted friends**. An invitation must be accepted separately before the recipient participates or can read the leaderboard. Acceptance means sharing calculated progress with all challenge participants, including people who are not direct friends.
+The creator joins automatically. Every accepted participant may invite **their own accepted friends**. An invitation must be accepted separately before the recipient participates or can read the leaderboard. Acceptance means sharing daily weights within the challenge dates and calculated progress with all challenge participants, including people who are not direct friends.
 
 Invitations and acceptance are allowed through the start date; they close the next UTC day. Choose a future start date to allow time to join. Removing a friendship revokes pending invitations between those users. Existing challenge membership remains independent of friendship; use **Leave challenge** to remove your progress and access. Leaving also cancels pending invitations you sent for that challenge. There is no delete/edit-challenge feature yet.
 
@@ -40,7 +40,9 @@ A one-week challenge starting October 2 includes October 2–8; October 9 is the
 
 Weights before the start and on/after the exclusive end do not count. Missing days are not invented or interpolated. The API computes standings from the journal whenever requested. Open a leaderboard or use **Refresh** to fetch current results. Corrections to entries inside the challenge window recalculate even finished challenges; there is no frozen result or anti-cheating audit in this release.
 
-Only calculated loss, measurement dates/counts, nicknames, and avatars are shared. The API never returns other participants' actual weights or calorie entries through the leaderboard. A leaderboard describes recorded changes, not a recommended weight-loss pace.
+The challenge detail includes a **Daily participant weights** chart with one line per accepted participant. It shares actual weights only within the challenge window, through today. The journal stores one weight per user per date: saving again replaces that day's weight, so the chart always shows the latest saved value for that date. Missing days are gaps, not estimated weights. Use the legend to hide/show lines, tap or focus points for details, or open the accessible daily-weight table. Pending invitees and outsiders cannot access the chart, and leaving removes a participant's data and access. Calories and weights outside the challenge dates remain private.
+
+This applies to existing challenges too: actual daily weights are now visible to their accepted participants. The creation/invitation text explains this sharing. A leaderboard describes recorded changes, not a recommended weight-loss pace.
 
 ## Profile and avatar
 
@@ -88,3 +90,4 @@ All social/profile routes require a signed-in session. Mutations also require `X
 | `PUT /api/social/challenges/{id}/invitation` | Accept/decline invitation |
 | `DELETE /api/social/challenges/{id}/participation` | Leave challenge |
 | `GET /api/social/challenges/{id}/leaderboard` | Participant-only calculated standings |
+| `GET /api/social/challenges/{id}/weights` | Participant-only daily weight series inside challenge dates |

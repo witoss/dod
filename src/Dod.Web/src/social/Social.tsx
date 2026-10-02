@@ -1,3 +1,4 @@
+import { WeightChart, type ParticipantWeights } from "./WeightChart";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../api";
 import { Avatar, type User } from "./Account";
@@ -23,6 +24,7 @@ export function Social() {
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [standings, setStandings] = useState<Standing[]>([]);
+  const [weights, setWeights] = useState<ParticipantWeights[]>([]);
   const [found, setFound] = useState<User | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -36,12 +38,16 @@ export function Social() {
     setFriends(f);
     setChallenges(c);
     if (id && c.some((ch) => ch.id === id && ch.status === "accepted")) {
-      setStandings(
-        await api<Standing[]>(`/api/social/challenges/${id}/leaderboard`),
-      );
+      const [rows, history] = await Promise.all([
+        api<Standing[]>(`/api/social/challenges/${id}/leaderboard`),
+        api<ParticipantWeights[]>(`/api/social/challenges/${id}/weights`),
+      ]);
+      setStandings(rows);
+      setWeights(history);
     } else {
       setSelected(null);
       setStandings([]);
+      setWeights([]);
     }
   }
   useEffect(() => {
@@ -96,10 +102,12 @@ export function Social() {
     setSelected(null);
     setStandings([]);
     try {
-      const rows = await api<Standing[]>(
-        `/api/social/challenges/${id}/leaderboard`,
-      );
+      const [rows, history] = await Promise.all([
+        api<Standing[]>(`/api/social/challenges/${id}/leaderboard`),
+        api<ParticipantWeights[]>(`/api/social/challenges/${id}/weights`),
+      ]);
       setStandings(rows);
+      setWeights(history);
       setSelected(id);
     } catch (e) {
       setError((e as Error).message);
@@ -247,7 +255,8 @@ export function Social() {
         <h2>Create a weight-loss challenge</h2>
         <p>
           Compare kilograms lost over a set number of weeks. Choose a future
-          start date to give friends time to join.
+          start date to give friends time to join. Creating or joining shares
+          your daily weights within the challenge dates with its participants.
         </p>
         <form onSubmit={create}>
           <label>
@@ -298,8 +307,8 @@ export function Social() {
               {c.status === "pending" ? (
                 <>
                   <p>
-                    Accepting shares your challenge progress with all
-                    participants.
+                    Accepting shares your daily weights within the challenge
+                    dates and your progress with all participants.
                   </p>
                   <button
                     disabled={busy || utcToday() > c.startDate}
@@ -337,7 +346,7 @@ export function Social() {
               ) : (
                 <>
                   <button disabled={busy} onClick={() => void open(c.id)}>
-                    Leaderboard & invitations
+                    Chart, leaderboard & invitations
                   </button>
                   <button
                     disabled={busy}
@@ -371,7 +380,8 @@ export function Social() {
           <p>
             First minus latest weight inside the challenge dates. Two
             measurements are needed for a rank. Ties share a rank; negative
-            values mean weight gained. Raw weights and calories stay private.
+            values mean weight gained. Daily weights are shared with challenge
+            participants; calorie entries stay private.
           </p>
           <div className="table-wrap">
             <table>
@@ -407,6 +417,12 @@ export function Social() {
               </tbody>
             </table>
           </div>
+          <WeightChart
+            key={active.id}
+            participants={weights}
+            startDate={active.startDate}
+            endDate={active.endDate}
+          />
           <p className="hint">
             Progress is recalculated from saved entries, including corrections.
             Different baseline dates may affect comparisons. Removing a friend

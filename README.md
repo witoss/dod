@@ -101,7 +101,7 @@ Use a consistent definition of calories burned, such as the total daily number r
 
 ### Friends, challenges, and your profile
 
-Use **Friends & challenges** to search by exact nickname, send and accept friend requests, create a challenge for a chosen number of weeks, and invite your accepted friends. Each invited person accepts before sharing progress. A challenge's leaderboard calculates kilograms lost from measurements inside its dates. Use **Profile** to edit your nickname or upload an avatar. Your journal and calorie settings remain private. [Read the full guide and scoring rules](docs/social.md).
+Use **Friends & challenges** to search by exact nickname, send and accept friend requests, create a challenge for a chosen number of weeks, and invite your accepted friends. Each invited person accepts before sharing progress. A challenge's leaderboard calculates kilograms lost from measurements inside its dates. Use **Profile** to edit your nickname or upload an avatar. Challenge participants can see your daily weights within the challenge dates. Calories and weights outside the challenge remain private. [Read the full guide and scoring rules](docs/social.md).
 
 ### Kilograms lost
 
@@ -714,4 +714,4 @@ Source: [Docker's official Ubuntu installation instructions](https://docs.docker
 
 Individual accounts, accepted friendships, challenge invitations, automatic kilogram-loss leaderboards, and editable profiles with avatars are now implemented. See [the social feature guide](docs/social.md) for use, scoring rules, ownership migration, and technical decisions.
 
-A future enhancement is a shared chart with one line per challenge participant, showing loss relative to their baseline over time. It should follow the same participant consent and access controls as the leaderboard. A chart has not been implemented yet.
+The challenge detail now includes a shared daily-weight chart with one line per accepted participant. Open **Chart, leaderboard & invitations** to view it. It shows the latest saved weight for each date inside the challenge window; missing days remain gaps. Participants can toggle lines, inspect points, and read the equivalent table. A future enhancement could add a relative-change view alongside actual kilograms.
