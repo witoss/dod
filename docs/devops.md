@@ -22,14 +22,14 @@ The simplest fit for the current SQLite design is one Linux server with Docker, 
 
 A first deployment checklist:
 
-1. Configure a domain and HTTPS reverse proxy to the app's localhost port 8080. Expose only HTTPS publicly, plus restricted administrative access. Basic authentication must never travel over public plain HTTP.
+1. Configure a domain and HTTPS reverse proxy to the app's localhost port 8080. Expose only HTTPS publicly, plus restricted administrative access. Account credentials must never travel over public plain HTTP; production session cookies require HTTPS.
 2. Store a strong `Tracker__Password` in the host's secret configuration. Keep `.env` out of Git. Add proxy-level login rate limiting before exposing the app publicly.
 3. Pull the GHCR image by commit SHA; a private package needs a read-only registry credential on the host. Replace Compose's `build: .` with `image: ghcr.io/<owner>/dod:<commit-sha>` for artifact-based deployments.
 4. Attach a persistent volume at `/data`, writable by the container's `app` user. The supplied named volume initializes permissions from the image; a host bind mount requires explicit ownership setup.
 5. Start the container; check `/health`, authenticate, save an entry, restart, and verify it remains.
 6. Set up off-host backups and test a restore before relying on the journal.
 
-Keep one running instance. This MVP's single-account browser login is suitable for a private personal journal. Replace it with established identity tooling and per-user ownership before inviting other users.
+Keep one running instance. Individual cookie-based accounts and per-user journal ownership now support friends and challenges. Follow the [account upgrade guide](social.md) to claim existing data, and review its recovery and rate-limiting limitations before wider use.
 
 ## 4. Backup and restore
 
@@ -41,7 +41,7 @@ For a cold backup: stop the app with `docker compose stop app`, locate the volum
 
 After the manual deployment works, configure the prepared workflow with a GitHub `production` environment with a required reviewer. A deployment job should depend on CI, deploy the tested SHA, wait for health, and preserve the previous SHA for rollback. Prefer short-lived cloud identity credentials where your selected provider supports them. Scope deployment credentials to this application.
 
-Rollback means redeploying the previous image SHA. Database changes also need a compatibility plan: startup now uses SQLite `user_version` migrations. Version 2 adds the calorie reference; version 3 adds optional daily calories eaten. Both preserve existing journal measurements. Future schema changes need a new migration version and a backup before deployment. A binary rollback cannot undo incompatible schema changes.
+Rollback means redeploying the previous image SHA. Database changes also need a compatibility plan: startup now uses SQLite `user_version` migrations. Version 2 adds the calorie reference; version 3 adds optional daily calories eaten. Version 4 adds individual accounts and social features, reserving existing measurements for the original owner until claimed. These migrations preserve journal measurements. Future schema changes need a new migration version and a backup before deployment. A binary rollback cannot undo incompatible schema changes.
 
 ## 6. Extend when needed
 

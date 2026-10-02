@@ -17,6 +17,7 @@ A personal journal for morning weight and evening calories burned, built with .N
 - [11. Set up a fresh Ubuntu VPS](#11-set-up-a-fresh-ubuntu-vps)
 - [12. Future ideas](#12-future-ideas)
 - [VPS deployment tutorial](docs/vps.md)
+- [Accounts, friends, challenges, and upgrade guide](docs/social.md)
 
 ## 1. Install and run the app
 
@@ -56,7 +57,7 @@ If you already have `.env`, edit it instead of copying over it. Set your own uni
 TRACKER_PASSWORD=replace-with-your-own-long-password
 ```
 
-This password protects the website. It is not your Docker, Mac, or GitHub password. `.env` is excluded from Git and the Docker build context.
+This password proves ownership when claiming the original journal after upgrading to individual accounts. It is not your new account, Docker, Mac, or GitHub password. `.env` is excluded from Git and the Docker build context.
 
 ### Start the app
 
@@ -64,10 +65,7 @@ This password protects the website. It is not your Docker, Mac, or GitHub passwo
 docker compose up --build -d
 ```
 
-Open **http://localhost:8080**. Your browser asks for:
-
-- **Username:** `tracker`
-- **Password:** your `TRACKER_PASSWORD` value
+Open **http://localhost:8080**. Choose **Claim existing journal**, enter your `TRACKER_PASSWORD`, and choose your personal nickname and a new account password. New users choose **Create account**. Later, sign in with your nickname and account password. See the [account upgrade guide](docs/social.md#upgrade-an-existing-journal).
 
 The first build downloads dependencies and takes longer. Later builds reuse cached work. `--build` builds the image before starting; `-d` leaves the container running in the background.
 
@@ -100,6 +98,10 @@ Press Ctrl+C to stop following logs; the app keeps running. Both stopping and re
 The two saves are independent: saving calories preserves the weight for that date. Saving a measurement again replaces its previous value. A missing value is different from a recorded zero.
 
 Use a consistent definition of calories burned, such as the total daily number reported by your watch. The app records the number you provide; it does not estimate it.
+
+### Friends, challenges, and your profile
+
+Use **Friends & challenges** to search by exact nickname, send and accept friend requests, create a challenge for a chosen number of weeks, and invite your accepted friends. Each invited person accepts before sharing progress. A challenge's leaderboard calculates kilograms lost from measurements inside its dates. Use **Profile** to edit your nickname or upload an avatar. Your journal and calorie settings remain private. [Read the full guide and scoring rules](docs/social.md).
 
 ### Kilograms lost
 
@@ -162,7 +164,7 @@ Open the Vite URL printed in the second terminal, normally `http://localhost:517
 
 Save a React or CSS file to see Vite update the browser. Save C# code to let `dotnet watch` apply a supported change or restart the API.
 
-Development disables the login unless `Tracker__Password` is set. Keep the development servers on loopback. The root `.env` is read by Docker Compose; `dotnet watch` does not automatically load it.
+Development also requires an account; create one through the UI. To claim a pre-existing local journal, supply `Tracker__Password` to the API process and use **Claim existing journal**. Keep development servers on loopback. The root `.env` is read by Docker Compose; `dotnet watch` does not automatically load it.
 
 The local API uses `data/dod.db` relative to its working directory unless you set `Storage__Path`. This is separate from the database in Docker's named volume, so development and container runs can have different entries.
 
@@ -242,17 +244,15 @@ The container design uses one app instance and persistent disk. If the app later
 
 ### Step 5: Protect the personal journal
 
-The MVP uses HTTP Basic authentication with one username, `tracker`. The password comes from configuration, and the app refuses to start outside Development without one.
+The app now uses individual nickname/password accounts and ASP.NET Core session cookies. Passwords are stored using the framework's password hasher. All journal and calorie-reference operations use the signed-in user's ID; another user's journal cannot be selected through request parameters.
 
-Compose reads `TRACKER_PASSWORD` from `.env` and passes it to .NET as `Tracker__Password`. In .NET configuration, the double underscore represents a section separator: `Tracker:Password`.
-
-This is a single-account design. Public hosting must use HTTPS because Basic authentication does not encrypt credentials itself. Multi-user accounts would require proper identity management and ownership checks for each user's data. Browsers retain Basic authentication credentials; a private browser session is useful when you need a clear session boundary.
+The old `TRACKER_PASSWORD` is used only to claim the reserved original journal, once. It is not a shared login or a password-reset mechanism. Public hosting requires HTTPS. Session keys persist beside the database, and mutations require antiforgery tokens. See [the authentication decisions and limitations](docs/social.md#implementation-decisions).
 
 ### Step 6: Add the reference without rewriting measurements
 
 The reference is stored separately from daily measurements. The frontend derives balances from the saved reference and the existing calorie entries. Daily intake overrides are stored on the entry as nullable `CaloriesEaten`. A null means use the reference; zero is a real measurement. Balances are calculated when displayed, so changing the reference affects only days without overrides.
 
-SQLite's `user_version` records the schema version. The version 2 startup migration adds the reference table in a transaction and adopts the original unversioned database without deleting entries. Version 3 adds nullable `CaloriesEaten` to existing entries, leaving their measurements intact. Tests exercise upgrades from both the original schema and version 2. Future schema changes should introduce a new migration version.
+SQLite's `user_version` records the schema version. The version 2 startup migration adds the reference table in a transaction and adopts the original unversioned database without deleting entries. Version 3 adds nullable `CaloriesEaten` to existing entries, leaving their measurements intact. Version 4 introduces accounts, per-user journal ownership, friendships, challenges, and avatars. Existing entries and the reference are reserved for the original owner until claimed. Tests exercise upgrades from older schemas without losing measurements. Future schema changes should introduce a new migration version.
 
 ### Step 7: Package one deployable app
 
@@ -447,7 +447,7 @@ Use this sequence when extending the app:
 | PUT | `/api/settings/calorie-reference` | `{ "calories": 2200 }` |
 | GET | `/health` | — |
 
-A measurement PUT creates or replaces only that measurement for the selected date. The reference GET returns `{ "calories": null }` until configured. Validation failures return HTTP 400; successful saves return 204. Routes are password-protected when authentication is enabled, except `/health`.
+A measurement PUT creates or replaces only that measurement for the selected date. The reference GET returns `{ "calories": null }` until configured. Validation failures return HTTP 400; successful saves return 204. Journal/settings routes always require a signed-in session, and writes require an antiforgery token. `/health` stays public. [Account and social API additions](docs/social.md#api-additions) are documented separately.
 
 The health route is a liveness probe: it confirms that the process can respond. It is not a database readiness check.
 
@@ -458,7 +458,8 @@ The health route is a liveness probe: it confirms that the process can respond. 
 | `zsh: command not found: docker` | Install and launch Docker Desktop, then open a new terminal. If already installed, check that its CLI is on your PATH. |
 | Docker cannot connect to its daemon | Start Docker Desktop and wait until it is running. |
 | `TRACKER_PASSWORD is missing a value` | Create `.env` beside `compose.yaml` and set a nonempty `TRACKER_PASSWORD`. |
-| Browser asks for credentials | Use username `tracker` and the password from `.env`. |
+| Sign-in screen after upgrade | Use **Claim existing journal** once with the old tracker password, then sign in with your new nickname/password. |
+| Sign-in does not persist in a local container | Use the updated local Compose file, which enables HTTP cookies on loopback. Keep Secure cookies enabled on the public VPS. |
 | Code changed but the container UI did not | Run `docker compose up --build -d`, then refresh the browser. Current Compose does not hot-reload. |
 | The graph is absent | Save a calorie reference and record calories within the selected date range. |
 | Local development shows different entries | The local API and Docker use separate database locations by default. |
@@ -709,22 +710,8 @@ Source: [Docker's official Ubuntu installation instructions](https://docs.docker
 
 ## 12. Future ideas
 
-### Friends and a shared weight-progress chart
+### Shared weight-progress chart
 
-**Planned idea; not implemented.** Add friends and compare how much weight each person has lost over a selected period, with one line per person on the same chart. The purpose is to motivate each other through shared progress.
+Individual accounts, accepted friendships, challenge invitations, automatic kilogram-loss leaderboards, and editable profiles with avatars are now implemented. See [the social feature guide](docs/social.md) for use, scoring rules, ownership migration, and technical decisions.
 
-For an initial version:
-
-- Send a friend invitation that the other person can accept or decline; allow removing a friend later.
-- Let each person opt in to sharing their progress with accepted friends.
-- Choose a common date range and show kilograms lost relative to each person's first recorded weight within that range: `weight lost = starting weight − recorded weight`. For example, 90 kg to 88 kg means 2 kg lost; weight gain produces a negative value.
-- Label each person's baseline date when measurements start on different days. Show missing measurements as gaps, and show an empty state when there are no measurements in the period.
-- Share progress rather than absolute weights or calorie entries by default. Avoid treating faster weight loss as a better result or adding a competitive leaderboard.
-
-The chart can reuse the existing graph approach, but the current shared `tracker` login cannot distinguish people. Multi-user access is the main prerequisite:
-
-- **Authentication — who are you?** Replace the shared password with individual accounts using an established identity solution, such as ASP.NET Core Identity or an external identity provider, with sign-in, sign-out, and account recovery.
-- **Authorization — what may you access?** Associate journal entries and calorie settings with their owner. Enforce ownership and accepted-friend sharing permissions in the API on every request, rather than relying on hidden UI controls. Friends may read only the progress explicitly shared with them and cannot edit another person's journal.
-- **Migration and verification:** Assign existing journal data to the original owner's account during migration. Test that users cannot access another account's private entries, pending invitations grant no access, and removing a friendship or disabling sharing revokes access to the comparison data.
-
-Implement individual accounts and private journals first, then invitations and sharing permissions, then the comparison chart. Decide the final identity provider and sharing details when this feature is scheduled.
+A future enhancement is a shared chart with one line per challenge participant, showing loss relative to their baseline over time. It should follow the same participant consent and access controls as the leaderboard. A chart has not been implemented yet.

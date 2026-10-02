@@ -1,0 +1,107 @@
+.social-tabs,
+.row-actions,
+.person-result {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.social-tabs {
+  margin: 24px 0;
+}
+.social-tabs button[aria-pressed="true"] {
+  background: #193a34;
+  color: white;
+}
+.social-panel {
+  background: white;
+  border: 1px solid #d8dfd5;
+  border-radius: 16px;
+  padding: 24px;
+  margin: 20px 0;
+}
+.social-panel label {
+  display: block;
+  margin: 16px 0;
+  font-weight: 600;
+}
+.social-panel input,
+.social-panel select {
+  display: block;
+  width: 100%;
+  max-width: 460px;
+  margin-top: 8px;
+  border: 1px solid #bac9bd;
+  border-radius: 8px;
+  padding: 12px;
+  font: inherit;
+  color: inherit;
+  background: white;
+}
+.social-panel button,
+.social-tabs button,
+.social-space > div > button {
+  border-radius: 8px;
+  padding: 10px 16px;
+  cursor: pointer;
+  margin: 4px 4px 4px 0;
+}
+.hint {
+  color: #65766e;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+.avatar-placeholder {
+  display: inline-flex;
+  background: #e5ece1;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+}
+.people-list,
+.challenge-list {
+  list-style: none;
+  padding: 0;
+}
+.people-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid #e5ece1;
+  padding: 12px 0;
+}
+.people-list strong {
+  overflow-wrap: anywhere;
+}
+.challenge-list li {
+  border-bottom: 1px solid #e5ece1;
+  padding: 16px 0;
+}
+.social-space h3 {
+  overflow-wrap: anywhere;
+}
+.account-page {
+  max-width: 700px;
+}
+@media (max-width: 600px) {
+  .social-panel {
+    padding: 16px;
+  }
+  .social-tabs button {
+    flex: 1;
+  }
+}
+.social-tabs button[aria-pressed="false"] {
+  background: white;
+  color: #193a34;
+  border: 1px solid #bac9bd;
+}

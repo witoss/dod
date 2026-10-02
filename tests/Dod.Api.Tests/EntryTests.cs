@@ -22,7 +22,7 @@ public sealed class EntryTests : IDisposable
             builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Storage:Path"] = Path.Combine(directory, "test.db"),
-                ["Tracker:Password"] = password
+                ["Tracker:Password"] = password ?? "test-password"
             }));
         });
 
@@ -30,14 +30,14 @@ public sealed class EntryTests : IDisposable
     public async Task IndependentUpdatesPreserveOtherFieldAndSurviveRestart()
     {
         using (var app = CreateApp())
-        using (var client = app.CreateClient())
+        using (var client = await SignedClient(app))
         {
             Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync("/api/entries/2026-09-28/weight", new { weightKg = 75.25 })).StatusCode);
             Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync("/api/entries/2026-09-28/calories", new { caloriesBurned = 2400 })).StatusCode);
             await client.PutAsJsonAsync("/api/entries/2026-09-28/weight", new { weightKg = 74.5 });
         }
         using var restarted = CreateApp();
-        using var restartedClient = restarted.CreateClient();
+        using var restartedClient = await SignedClient(restarted);
         var entry = Assert.Single((await restartedClient.GetFromJsonAsync<List<DailyEntry>>("/api/entries/"))!);
         Assert.Equal(74.5m, entry.WeightKg);
         Assert.Equal(2400, entry.CaloriesBurned);
@@ -50,7 +50,7 @@ public sealed class EntryTests : IDisposable
     [InlineData("calories", "{\"caloriesBurned\":1.5}")]
     public async Task InvalidInputIsRejectedWithoutWriting(string field, string json)
     {
-        using var app = CreateApp(); using var client = app.CreateClient();
+        using var app = CreateApp(); using var client = await SignedClient(app);
         var response = await client.PutAsync($"/api/entries/2026-09-28/{field}", new StringContent(json, Encoding.UTF8, "application/json"));
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Empty((await client.GetFromJsonAsync<List<DailyEntry>>("/api/entries/"))!);
@@ -59,7 +59,7 @@ public sealed class EntryTests : IDisposable
     [Fact]
     public async Task ZeroCaloriesIsAnEntryAndWeightRemainsMissing()
     {
-        using var app = CreateApp(); using var client = app.CreateClient();
+        using var app = CreateApp(); using var client = await SignedClient(app);
         await client.PutAsJsonAsync("/api/entries/2026-09-28/calories", new { caloriesBurned = 0 });
         var entry = Assert.Single((await client.GetFromJsonAsync<List<DailyEntry>>("/api/entries/"))!);
         Assert.Null(entry.WeightKg); Assert.Equal(0, entry.CaloriesBurned);
@@ -68,26 +68,26 @@ public sealed class EntryTests : IDisposable
     [Fact]
     public async Task PasswordProtectsDataButAllowsHealthProbe()
     {
-        using var app = CreateApp("test-password"); using var client = app.CreateClient();
+        using var app = CreateApp(); using var client = app.CreateClient();
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/health")).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/entries/")).StatusCode);
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes("tracker:wrong")));
-        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/entries/")).StatusCode);
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes("tracker:test-password")));
-        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/entries/")).StatusCode);
+        await SetCsrf(client);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsJsonAsync("/api/account/login", new { nickname = "tester", password = "wrong" })).StatusCode);
+        using var signed = await SignedClient(app);
+        Assert.Equal(HttpStatusCode.OK, (await signed.GetAsync("/api/entries/")).StatusCode);
     }
     [Fact]
     public async Task ReferenceStartsUnsetAndUpdatesSurviveRestart()
     {
         using (var app = CreateApp())
-        using (var client = app.CreateClient())
+        using (var client = await SignedClient(app))
         {
             Assert.Null((await client.GetFromJsonAsync<CalorieReferenceResponse>("/api/settings/calorie-reference"))!.Calories);
             Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync("/api/settings/calorie-reference", new { calories = 2000 })).StatusCode);
             Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync("/api/settings/calorie-reference", new { calories = 2200 })).StatusCode);
         }
         using var restarted = CreateApp();
-        using var restartedClient = restarted.CreateClient();
+        using var restartedClient = await SignedClient(restarted);
         Assert.Equal(2200, (await restartedClient.GetFromJsonAsync<CalorieReferenceResponse>("/api/settings/calorie-reference"))!.Calories);
     }
 
@@ -101,7 +101,7 @@ public sealed class EntryTests : IDisposable
     public async Task InvalidReferenceDoesNotOverwriteSavedValue(string json)
     {
         using var app = CreateApp();
-        using var client = app.CreateClient();
+        using var client = await SignedClient(app);
         await client.PutAsJsonAsync("/api/settings/calorie-reference", new { calories = 2200 });
         var response = await client.PutAsync("/api/settings/calorie-reference", new StringContent(json, Encoding.UTF8, "application/json"));
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -120,6 +120,7 @@ public sealed class EntryTests : IDisposable
     [Theory]
     [InlineData(0)]
     [InlineData(2)]
+    [InlineData(3)]
     public async Task UpgradesOriginalDatabaseWithoutLosingMeasurements(int version)
     {
         Directory.CreateDirectory(directory);
@@ -132,17 +133,28 @@ public sealed class EntryTests : IDisposable
                 INSERT INTO Entries VALUES ('2026-09-28', 75.25, 2400);
                 """;
             await command.ExecuteNonQueryAsync();
-            if (version == 2)
+            if (version >= 2)
             {
                 command.CommandText = "CREATE TABLE CalorieReference (Id INTEGER PRIMARY KEY, Calories INTEGER NOT NULL); INSERT INTO CalorieReference VALUES (1, 2100); PRAGMA user_version=2;";
                 await command.ExecuteNonQueryAsync();
             }
+            if (version == 3)
+            {
+                command.CommandText = "ALTER TABLE Entries ADD COLUMN CaloriesEaten INTEGER NULL; PRAGMA user_version=3;";
+                await command.ExecuteNonQueryAsync();
+            }
         }
         using var app = CreateApp();
-        using var client = app.CreateClient();
+        using var outsider = app.CreateClient();
+        await SetCsrf(outsider);
+        (await outsider.PostAsJsonAsync("/api/account/register", new { nickname = "outsider", password = "outsider-password-123" })).EnsureSuccessStatusCode();
+        await SetCsrf(outsider);
+        Assert.Empty((await outsider.GetFromJsonAsync<List<DailyEntry>>("/api/entries/"))!);
+        Assert.Null((await outsider.GetFromJsonAsync<CalorieReferenceResponse>("/api/settings/calorie-reference"))!.Calories);
+        using var client = await SignedClient(app);
         var entry = Assert.Single((await client.GetFromJsonAsync<List<DailyEntry>>("/api/entries/"))!);
         Assert.Null(entry.CaloriesEaten);
-        if (version == 2) Assert.Equal(2100, (await client.GetFromJsonAsync<CalorieReferenceResponse>("/api/settings/calorie-reference"))!.Calories);
+        if (version >= 2) Assert.Equal(2100, (await client.GetFromJsonAsync<CalorieReferenceResponse>("/api/settings/calorie-reference"))!.Calories);
         Assert.Equal(75.25m, entry.WeightKg);
         Assert.Equal(2400, entry.CaloriesBurned);
         Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync("/api/settings/calorie-reference", new { calories = 2200 })).StatusCode);
@@ -153,14 +165,14 @@ public sealed class EntryTests : IDisposable
     public async Task EatenOverridePersistsAndCanBeClearedWithoutChangingOtherMeasurements()
     {
         using (var app = CreateApp())
-        using (var client = app.CreateClient())
+        using (var client = await SignedClient(app))
         {
             await client.PutAsJsonAsync("/api/entries/2026-09-28/weight", new { weightKg = 75 });
             await client.PutAsJsonAsync("/api/entries/2026-09-28/calories", new { caloriesBurned = 2400 });
             Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync("/api/entries/2026-09-28/eaten", new { caloriesEaten = 0 })).StatusCode);
         }
         using var restarted = CreateApp();
-        using var restartedClient = restarted.CreateClient();
+        using var restartedClient = await SignedClient(restarted);
         var entry = Assert.Single((await restartedClient.GetFromJsonAsync<List<DailyEntry>>("/api/entries/"))!);
         Assert.Equal(0, entry.CaloriesEaten);
         Assert.Equal(75m, entry.WeightKg);
@@ -180,7 +192,7 @@ public sealed class EntryTests : IDisposable
     public async Task InvalidEatenOverrideDoesNotOverwriteIntake(string json)
     {
         using var app = CreateApp();
-        using var client = app.CreateClient();
+        using var client = await SignedClient(app);
         await client.PutAsJsonAsync("/api/entries/2026-09-28/eaten", new { caloriesEaten = 2100 });
         Assert.Equal(HttpStatusCode.BadRequest, (await client.PutAsync("/api/entries/2026-09-28/eaten", new StringContent(json, Encoding.UTF8, "application/json"))).StatusCode);
         Assert.Equal(2100, Assert.Single((await client.GetFromJsonAsync<List<DailyEntry>>("/api/entries/"))!).CaloriesEaten);
@@ -189,9 +201,25 @@ public sealed class EntryTests : IDisposable
     [Fact]
     public async Task ClearingMissingOverrideDoesNotCreateAnEmptyDay()
     {
-        using var app = CreateApp(); using var client = app.CreateClient();
+        using var app = CreateApp(); using var client = await SignedClient(app);
         await client.PutAsJsonAsync("/api/entries/2026-09-28/eaten", new { caloriesEaten = (int?)null });
         Assert.Empty((await client.GetFromJsonAsync<List<DailyEntry>>("/api/entries/"))!);
+    }
+
+    private static async Task SetCsrf(HttpClient client)
+    {
+        var token = await client.GetFromJsonAsync<System.Text.Json.JsonElement>("/api/account/csrf");
+        client.DefaultRequestHeaders.Remove("X-CSRF-TOKEN");
+        client.DefaultRequestHeaders.Add("X-CSRF-TOKEN", token.GetProperty("token").GetString());
+    }
+    private static async Task<HttpClient> SignedClient(WebApplicationFactory<Program> app)
+    {
+        var client = app.CreateClient();
+        await SetCsrf(client);
+        var result = await client.PostAsJsonAsync("/api/account/claim", new { nickname = "tester", password = "test-password-123", ownerPassword = "test-password" });
+        if (result.StatusCode == HttpStatusCode.Conflict)
+            result = await client.PostAsJsonAsync("/api/account/login", new { nickname = "tester", password = "test-password-123" });
+        result.EnsureSuccessStatusCode(); await SetCsrf(client); return client;
     }
 
     public void Dispose() { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); if (Directory.Exists(directory)) Directory.Delete(directory, true); }

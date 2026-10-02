@@ -12,7 +12,7 @@ public static class EntryEndpoints
 {
     public static void MapEntryEndpoints(this WebApplication app)
     {
-        var group = app.MapGroup("/api/entries");
+        var group = app.MapGroup("/api/entries").RequireAuthorization();
         group.MapGet("/", async (EntryStore store) => Results.Ok(await store.ListAsync()));
         group.MapPut("/{date}/eaten", async (DateOnly date, EatenInput input, EntryStore store) =>
         {

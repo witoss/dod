@@ -1,3 +1,4 @@
+import { apiFetch } from "../api";
 import { useEffect, useState, type FormEvent } from "react";
 
 export function EatenForm({
@@ -21,7 +22,7 @@ export function EatenForm({
     setMessage("");
     setError("");
     try {
-      const response = await fetch(`/api/entries/${date}/eaten`, {
+      const response = await apiFetch(`/api/entries/${date}/eaten`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ caloriesEaten }),

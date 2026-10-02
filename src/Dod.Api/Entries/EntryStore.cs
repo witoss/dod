@@ -3,7 +3,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Dod.Api.Entries;
 
-public sealed class EntryStore(IConfiguration configuration)
+public sealed class EntryStore(IConfiguration configuration, IHttpContextAccessor context)
 {
     private readonly string connectionString = new SqliteConnectionStringBuilder
     {
@@ -23,7 +23,7 @@ public sealed class EntryStore(IConfiguration configuration)
         command.Transaction = transaction;
         command.CommandText = "PRAGMA user_version";
         var version = Convert.ToInt32(await command.ExecuteScalarAsync());
-        if (version > 3)
+        if (version > 4)
             throw new InvalidOperationException("The database was created by a newer version of DOD.");
 
         // Version 1 originally had no user_version. Adopt it without replacing any entries.
@@ -55,6 +55,47 @@ public sealed class EntryStore(IConfiguration configuration)
                 """;
             await command.ExecuteNonQueryAsync();
         }
+        if (version < 4)
+        {
+            command.CommandText = """
+                CREATE TABLE Users (
+                    Id TEXT PRIMARY KEY, Nickname TEXT NOT NULL, NormalizedNickname TEXT NOT NULL UNIQUE,
+                    PasswordHash TEXT NULL, Avatar BLOB NULL, AvatarType TEXT NULL
+                );
+                INSERT INTO Users (Id, Nickname, NormalizedNickname) VALUES ('legacy', 'Reserved owner', '!OWNER');
+                ALTER TABLE Entries RENAME TO LegacyEntries;
+                CREATE TABLE Entries (
+                    UserId TEXT NOT NULL REFERENCES Users(Id), Date TEXT NOT NULL,
+                    WeightKg REAL NULL CHECK (WeightKg > 0 AND WeightKg <= 1000),
+                    CaloriesBurned INTEGER NULL CHECK (CaloriesBurned BETWEEN 0 AND 100000),
+                    CaloriesEaten INTEGER NULL CHECK (CaloriesEaten BETWEEN 0 AND 100000),
+                    PRIMARY KEY(UserId, Date)
+                );
+                INSERT INTO Entries SELECT 'legacy', Date, WeightKg, CaloriesBurned, CaloriesEaten FROM LegacyEntries;
+                DROP TABLE LegacyEntries;
+                ALTER TABLE CalorieReference RENAME TO LegacyReference;
+                CREATE TABLE CalorieReference (UserId TEXT PRIMARY KEY REFERENCES Users(Id), Calories INTEGER NOT NULL CHECK (Calories BETWEEN 1 AND 100000));
+                INSERT INTO CalorieReference SELECT 'legacy', Calories FROM LegacyReference;
+                DROP TABLE LegacyReference;
+                CREATE TABLE Friendships (
+                    Sender TEXT NOT NULL REFERENCES Users(Id), Recipient TEXT NOT NULL REFERENCES Users(Id),
+                    Status TEXT NOT NULL CHECK (Status IN ('pending','accepted')), CHECK(Sender <> Recipient),
+                    PRIMARY KEY(Sender, Recipient)
+                );
+                CREATE UNIQUE INDEX FriendshipPair ON Friendships(min(Sender, Recipient), max(Sender, Recipient));
+                CREATE TABLE Challenges (
+                    Id TEXT PRIMARY KEY, OwnerId TEXT NOT NULL REFERENCES Users(Id), Name TEXT NOT NULL,
+                    StartDate TEXT NOT NULL, EndDate TEXT NOT NULL
+                );
+                CREATE TABLE Participants (
+                    ChallengeId TEXT NOT NULL REFERENCES Challenges(Id), UserId TEXT NOT NULL REFERENCES Users(Id),
+                    InvitedBy TEXT NOT NULL REFERENCES Users(Id), Status TEXT NOT NULL CHECK(Status IN ('pending','accepted')),
+                    PRIMARY KEY(ChallengeId, UserId)
+                );
+                PRAGMA user_version=4;
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
         transaction.Commit();
     }
 
@@ -62,7 +103,8 @@ public sealed class EntryStore(IConfiguration configuration)
     {
         await using var connection = await OpenAsync();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT Calories FROM CalorieReference WHERE Id = 1";
+        command.Parameters.AddWithValue("$user", UserId);
+        command.CommandText = "SELECT Calories FROM CalorieReference WHERE UserId = $user";
         var value = await command.ExecuteScalarAsync();
         return value is null ? null : Convert.ToInt32(value);
     }
@@ -71,9 +113,10 @@ public sealed class EntryStore(IConfiguration configuration)
     {
         await using var connection = await OpenAsync();
         using var command = connection.CreateCommand();
+        command.Parameters.AddWithValue("$user", UserId);
         command.CommandText = """
-            INSERT INTO CalorieReference (Id, Calories) VALUES (1, $calories)
-            ON CONFLICT(Id) DO UPDATE SET Calories = excluded.Calories
+            INSERT INTO CalorieReference (UserId, Calories) VALUES ($user, $calories)
+            ON CONFLICT(UserId) DO UPDATE SET Calories = excluded.Calories
             """;
         command.Parameters.AddWithValue("$calories", calories);
         await command.ExecuteNonQueryAsync();
@@ -83,13 +126,14 @@ public sealed class EntryStore(IConfiguration configuration)
     {
         await using var connection = await OpenAsync();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT Date, WeightKg, CaloriesBurned, CaloriesEaten FROM Entries ORDER BY Date DESC";
+        command.Parameters.AddWithValue("$user", UserId);
+        command.CommandText = "SELECT Date, WeightKg, CaloriesBurned, CaloriesEaten FROM Entries WHERE UserId = $user ORDER BY Date DESC";
         using var reader = await command.ExecuteReaderAsync();
         var entries = new List<DailyEntry>();
         while (await reader.ReadAsync())
             entries.Add(new DailyEntry(DateOnly.ParseExact(reader.GetString(0), "yyyy-MM-dd", CultureInfo.InvariantCulture),
                 reader.IsDBNull(1) ? null : reader.GetDecimal(1), reader.IsDBNull(2) ? null : reader.GetInt32(2))
-                { CaloriesEaten = reader.IsDBNull(3) ? null : reader.GetInt32(3) });
+            { CaloriesEaten = reader.IsDBNull(3) ? null : reader.GetInt32(3) });
         return entries;
     }
 
@@ -105,7 +149,8 @@ public sealed class EntryStore(IConfiguration configuration)
         }
         await using var connection = await OpenAsync();
         using var command = connection.CreateCommand();
-        command.CommandText = "UPDATE Entries SET CaloriesEaten = NULL WHERE Date = $date";
+        command.Parameters.AddWithValue("$user", UserId);
+        command.CommandText = "UPDATE Entries SET CaloriesEaten = NULL WHERE UserId = $user AND Date = $date";
         command.Parameters.AddWithValue("$date", date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
         await command.ExecuteNonQueryAsync();
     }
@@ -114,14 +159,18 @@ public sealed class EntryStore(IConfiguration configuration)
     {
         await using var connection = await OpenAsync();
         using var command = connection.CreateCommand();
+        command.Parameters.AddWithValue("$user", UserId);
         // Column is chosen only by the measurement methods above; all input values are parameters.
-        command.CommandText = $"INSERT INTO Entries (Date, {column}) VALUES ($date, $value) ON CONFLICT(Date) DO UPDATE SET {column} = excluded.{column}";
+        command.CommandText = $"INSERT INTO Entries (UserId, Date, {column}) VALUES ($user, $date, $value) ON CONFLICT(UserId, Date) DO UPDATE SET {column} = excluded.{column}";
         command.Parameters.AddWithValue("$date", date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
         command.Parameters.AddWithValue("$value", value);
         await command.ExecuteNonQueryAsync();
     }
 
-    private async Task<SqliteConnection> OpenAsync()
+    public string UserId => context.HttpContext?.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+        ?? throw new UnauthorizedAccessException();
+
+    internal async Task<SqliteConnection> OpenAsync()
     {
         var connection = new SqliteConnection(connectionString);
         try { await connection.OpenAsync(); return connection; }

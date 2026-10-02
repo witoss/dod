@@ -4,6 +4,7 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
     environment:
+      Authentication__AllowHttp: "true" # Local loopback-only HTTP; do not enable on the VPS.
       Tracker__Password: ${TRACKER_PASSWORD:?Set TRACKER_PASSWORD in .env}
     volumes:
       - tracker-data:/data

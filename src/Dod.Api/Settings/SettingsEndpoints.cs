@@ -9,7 +9,7 @@ public static class SettingsEndpoints
 {
     public static void MapSettingsEndpoints(this WebApplication app)
     {
-        var group = app.MapGroup("/api/settings");
+        var group = app.MapGroup("/api/settings").RequireAuthorization();
         group.MapGet("/calorie-reference", async (EntryStore store) =>
             Results.Ok(new CalorieReferenceResponse(await store.GetCalorieReferenceAsync())));
         group.MapPut("/calorie-reference", async (CalorieReferenceInput input, EntryStore store) =>

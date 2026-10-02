@@ -106,7 +106,7 @@ For a new setup, use a DuckDNS hostname or a domain you own, for example `tracke
 
 Caddy needs the hostname to resolve to the server and inbound ports 80/443 to be reachable. A purchased domain has a separate registration cost; the DuckDNS hostname we selected is free.
 
-For early checks without a domain, use an SSH tunnel to loopback rather than exposing the app's Basic login over public HTTP. Public deployment in the supplied configuration expects a domain and HTTPS. [How Caddy automatic HTTPS works](https://caddyserver.com/docs/automatic-https)
+For early checks without a domain, use an SSH tunnel to loopback rather than exposing account credentials over public HTTP. Public deployment in the supplied configuration expects a domain and HTTPS. [How Caddy automatic HTTPS works](https://caddyserver.com/docs/automatic-https)
 
 ## 5. Publish the image and copy deployment files
 
@@ -150,7 +150,7 @@ Check the public address:
 curl --fail https://tracker.your-domain.com/health
 ```
 
-Open the HTTPS site and sign in as `tracker` with the server password. Save a test entry, restart the app, and confirm it remains. Local health does not prove DNS or HTTPS is working, so do this public check separately.
+Open the HTTPS site and select **Claim existing journal**. Verify the existing server tracker password and choose your new personal nickname/password. This claim is one-time; new users register separate accounts. See [the upgrade guide](social.md#upgrade-an-existing-journal). Save a test entry, restart the app, and confirm it remains. Local health does not prove DNS or HTTPS is working, so do this public check separately.
 
 Useful server commands after the first successful deployment:
 
@@ -234,4 +234,4 @@ Deployment scripts and proxy configuration are installed separately with `scp`. 
 
 Keep one app instance while using this SQLite design. Rotate credentials, install OS updates, check disk usage, and monitor the public health endpoint. Docker log rotation is configured. Caddy's major-version image tag receives updates when pulled; review and schedule proxy and OS updates as part of maintenance.
 
-The starter deployment has Basic authentication but no login-specific rate limiting. Before treating the public instance as a long-term production service, add login throttling or an identity-aware access layer alongside automated off-host backups and monitoring.
+The app now has individual cookie-based accounts, antiforgery validation, and a basic shared account-operation throttle. Automated off-host backups, restore testing, monitoring, and account recovery remain follow-up work. Production cookies require HTTPS; do not enable the local-only `Authentication__AllowHttp` setting on the VPS. Schema 4 requires a compatible backup for rollback to the older single-user app.

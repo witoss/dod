@@ -1,3 +1,4 @@
+import { apiFetch } from "../api";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   balanceDays,
@@ -32,7 +33,7 @@ export function CalorieBalance({
     setLoading(true);
     setLoadError("");
     try {
-      const response = await fetch(referenceUrl);
+      const response = await apiFetch(referenceUrl);
       if (!response.ok)
         throw new Error("Could not load your calorie reference. Please retry.");
       const settings: Reference = await response.json();
@@ -59,7 +60,7 @@ export function CalorieBalance({
     setMessage("");
     setSaveError("");
     try {
-      const response = await fetch(referenceUrl, {
+      const response = await apiFetch(referenceUrl, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ calories }),
