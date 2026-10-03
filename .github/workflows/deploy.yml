@@ -54,7 +54,13 @@ jobs:
             fi
           fi
           echo 'deploy=true' >> "$GITHUB_OUTPUT"
-      - name: Deploy the tested image over SSH
+      - name: Check out the tested release configuration
+        if: steps.release.outputs.deploy == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.IMAGE_SHA }}
+          persist-credentials: false
+      - name: Deploy the tested image and Compose configuration over SSH
         if: steps.release.outputs.deploy == 'true'
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
@@ -72,7 +78,11 @@ jobs:
           printf '%s\n' "$VPS_SSH_KEY" > "$ssh_dir/key"
           printf '%s\n' "$VPS_KNOWN_HOSTS" > "$ssh_dir/known_hosts"
           image="ghcr.io/${REPOSITORY,,}:$IMAGE_SHA"
+          remote_compose="/opt/dod/.compose-$IMAGE_SHA.yaml"
+          scp -i "$ssh_dir/key" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_dir/known_hosts" \
+            -o ConnectTimeout=15 deploy/vps/compose.yaml "$VPS_USER@$VPS_HOST:$remote_compose"
           ssh -i "$ssh_dir/key" -o BatchMode=yes -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_dir/known_hosts" \
             -o ConnectTimeout=15 "$VPS_USER@$VPS_HOST" \
-            "bash /opt/dod/deploy.sh '$image'"
+            "mv -- '$remote_compose' /opt/dod/compose.yaml && bash /opt/dod/deploy.sh '$image'"

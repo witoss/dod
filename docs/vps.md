@@ -230,7 +230,7 @@ To prepare `VPS_KNOWN_HOSTS`, collect the server's public host key, verify its f
 
 The cloud firewall must permit SSH from the workflow runner. Standard GitHub-hosted runners have changing addresses; an initial home-IP-only rule will block them. Decide whether to use managed runner egress through a private network, maintain suitable allow rules, or deliberately expose key-only SSH publicly. Until that is decided, continue manual deployment from your allowed IP. The workflow itself does not change firewall rules.
 
-Run **Actions → Deploy to VPS → Run workflow**, choose branch `main`, and enter the full SHA of the desired successful `main` push build. The workflow checks that CI succeeded for that SHA, then invokes `/opt/dod/deploy.sh` over SSH. The server pulls from GHCR using its own read-only registry credentials. The app password stays on the server.
+Run **Actions → Deploy to VPS → Run workflow**, choose branch `main`, and enter the full SHA of the desired successful `main` push build. The workflow checks that CI succeeded for that SHA, checks out its production Compose file, uploads it to the VPS, then invokes `/opt/dod/deploy.sh` over SSH. The server pulls from GHCR using its own read-only registry credentials. The app password stays on the server.
 
 After a successful push-triggered **Verify and package** run on `main`, `workflow_run` also starts deployment automatically. The job checks the source repository, event, branch, and success result, and deploys the CI run's `head_sha`. Pull requests and manual CI runs cannot trigger automatic deployment. It skips an automatic release if `main` has moved on when checked, while manual releases can still select an older tested SHA. Deployments share a concurrency group and do not cancel an active deployment. Environment approval rules still apply.
 
@@ -240,7 +240,7 @@ Our server now permits TCP 22 from any IPv4 after key-only authentication and di
 
  SSH credentials for a Docker-enabled user have broad server access, so limit who can edit workflows, approve deployments, and use the production secrets.
 
-Deployment scripts and proxy configuration are installed separately with `scp`. Image deployment does not update those files. Review and copy infrastructure changes explicitly before using them.
+The workflow synchronizes `deploy/vps/compose.yaml` from the selected tested image SHA before deployment, so new environment mappings reach the app container. It does not upload `.env`: SMTP credentials and other secrets stay on the VPS. Deployment scripts and `Caddyfile` are installed separately with `scp`; review and copy changes to those files explicitly before using them.
 
 ## 10. Rollback and maintenance
 
