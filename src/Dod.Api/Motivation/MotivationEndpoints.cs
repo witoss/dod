@@ -43,6 +43,7 @@ public static class MotivationEndpoints
         context.Response.Headers["X-XP-Change"] = change.Awarded.ToString(CultureInfo.InvariantCulture);
         context.Response.Headers["X-XP-Total"] = change.Experience.TotalXp.ToString(CultureInfo.InvariantCulture);
         context.Response.Headers["X-XP-Level-Up"] = change.LeveledUp ? "true" : "false";
+        context.Response.Headers["X-XP-Weekly-Bonus-Change"] = change.WeeklyBonusChange.ToString(CultureInfo.InvariantCulture);
     }
     private static bool Valid(ActivityInput input) => !string.IsNullOrWhiteSpace(input.Name) && input.Name.Trim().Length <= 80
         && !string.IsNullOrWhiteSpace(input.Description) && input.Description.Trim().Length <= 300

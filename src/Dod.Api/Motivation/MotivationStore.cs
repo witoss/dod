@@ -1,22 +1,18 @@
-using Dod.Api.Notifications;
+using Dod.Api.Motivation.Persistence;
+using Dod.Api.Motivation.Domain;
 using System.Globalization;
 using Dod.Api.Entries;
 using Microsoft.Data.Sqlite;
 
 namespace Dod.Api.Motivation;
 
-public record Experience(long TotalXp, long Level, long XpIntoLevel, int XpPerLevel, long XpToNextLevel)
-{
-    public static Experience From(long xp) => new(xp, xp / 100 + 1, xp % 100, 100, 100 - xp % 100);
-}
-public record XpChange(long Awarded, Experience Experience, bool LeveledUp);
 public record ActivityDefinition(string Id, string Name, string Description, string Kind, int Points, string? CutoffTime, bool IsActive, string AvailableFrom);
 public record DailyActivity(string Id, string Name, string Description, string Kind, int Points, string? CutoffTime, bool IsActive, bool? Completed, int Earned, bool CanReport);
 public record MotivationDay(string Date, string Today, Experience Experience, List<DailyActivity> Activities);
 public record ActivityInput(string Name, string Description, int Points, string? CutoffTime, bool IsActive);
 public record ReportInput([property: System.Text.Json.Serialization.JsonRequired] bool Completed);
 
-public sealed class MotivationStore(EntryStore entries, TimeProvider clock)
+public sealed class MotivationStore(EntryStore entries, TimeProvider clock, ILogger<MotivationStore> logger)
 {
     public string Today => DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
     public static string Format(DateOnly date) => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
@@ -38,6 +34,7 @@ public sealed class MotivationStore(EntryStore entries, TimeProvider clock)
     public async Task<MotivationDay> GetDay(DateOnly date)
     {
         var day = Format(date);
+        var today = DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
         await using var db = await entries.OpenAsync();
         using var tx = db.BeginTransaction();
         using var cmd = Command(db, tx, """
@@ -56,19 +53,21 @@ public sealed class MotivationStore(EntryStore entries, TimeProvider clock)
             while (await rows.ReadAsync())
                 activities.Add(new(rows.GetString(0), rows.GetString(1), rows.GetString(2), rows.GetString(3), rows.GetInt32(4),
                     rows.IsDBNull(5) ? null : rows.GetString(5), rows.GetBoolean(6), rows.IsDBNull(7) ? null : rows.GetBoolean(7), rows.GetInt32(8),
-                    rows.GetString(3) == "manual" && string.CompareOrdinal(day, Today) <= 0 && string.CompareOrdinal(day, rows.GetString(9)) >= 0));
+                    GoalProgress.CanReport(rows.GetString(3), date, today, DateOnly.ParseExact(rows.GetString(9), "yyyy-MM-dd"))));
         }
         var experience = Experience.From(await Total(db, tx));
         tx.Commit();
-        return new(day, Today, experience, activities);
+        return new(day, Format(today), experience, activities);
     }
     public async Task<XpChange?> Report(DateOnly date, string activityId, bool completed)
     {
         var day = Format(date);
-        if (string.CompareOrdinal(day, Today) > 0) return null;
+        var today = DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
+        if (date > today) return null;
         await using var db = await entries.OpenAsync();
         using var tx = db.BeginTransaction();
         var before = await Total(db, tx);
+        var bonusBefore = await WeeklyRules.Bonus(db, tx, entries.UserId, date);
         using var cmd = Command(db, tx, """
             INSERT INTO ActivityReports (UserId,ActivityId,Date,Completed,Points,Name,Description,CutoffTime)
             SELECT $user,Id,$date,$completed,Points,Name,Description,CutoffTime FROM Activities a
@@ -77,17 +76,22 @@ public sealed class MotivationStore(EntryStore entries, TimeProvider clock)
             ON CONFLICT(UserId,ActivityId,Date) DO UPDATE SET Completed=excluded.Completed
             """, ("$user", entries.UserId), ("$date", day), ("$id", activityId), ("$completed", completed ? 1 : 0), ("$week", WeeklyRules.Day(WeeklyRules.Monday(date))));
         if (await cmd.ExecuteNonQueryAsync() == 0) return null;
-        await WeeklyRules.Reconcile(db, tx, entries.UserId, date, DateOnly.ParseExact(Today, "yyyy-MM-dd"));
+        await WeeklyRules.Reconcile(db, tx, entries.UserId, date, today);
         var after = await Total(db, tx);
+        var bonusAfter = await WeeklyRules.Bonus(db, tx, entries.UserId, date);
         tx.Commit();
-        return new(after - before, Experience.From(after), after / 100 > before / 100);
+        var change = XpChange.Between(before, after, bonusBefore, bonusAfter);
+        LogProgress(date, activityId, change);
+        return change;
     }
     public async Task<XpChange> RecordWeight(DateOnly date, decimal weight)
     {
         var day = Format(date);
+        var today = DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
         await using var db = await entries.OpenAsync();
         using var tx = db.BeginTransaction();
         var before = await Total(db, tx);
+        var bonusBefore = await WeeklyRules.Bonus(db, tx, entries.UserId, date);
         using var cmd = Command(db, tx, """
             INSERT INTO Entries (UserId,Date,WeightKg) VALUES ($user,$date,$weight)
             ON CONFLICT(UserId,Date) DO UPDATE SET WeightKg=excluded.WeightKg;
@@ -95,13 +99,20 @@ public sealed class MotivationStore(EntryStore entries, TimeProvider clock)
             SELECT $user,Id,$date,1,CASE WHEN IsActive=1 AND AvailableFrom<=$date THEN Points ELSE 0 END,Name,Description,NULL
             FROM Activities WHERE Kind='weight' AND $date<=$today
             ON CONFLICT(UserId,ActivityId,Date) DO NOTHING;
-            """, ("$user", entries.UserId), ("$date", day), ("$weight", weight), ("$today", Today));
+            """, ("$user", entries.UserId), ("$date", day), ("$weight", weight), ("$today", Format(today)));
         await cmd.ExecuteNonQueryAsync();
-        await WeeklyRules.Reconcile(db, tx, entries.UserId, date, DateOnly.ParseExact(Today, "yyyy-MM-dd"));
+        await WeeklyRules.Reconcile(db, tx, entries.UserId, date, today);
         var after = await Total(db, tx);
+        var bonusAfter = await WeeklyRules.Bonus(db, tx, entries.UserId, date);
         tx.Commit();
-        return new(after - before, Experience.From(after), after / 100 > before / 100);
+        var change = XpChange.Between(before, after, bonusBefore, bonusAfter);
+        LogProgress(date, "weight", change);
+        return change;
     }
+    private void LogProgress(DateOnly date, string activityId, XpChange change) =>
+        logger.Log(change.Awarded == 0 ? LogLevel.Debug : LogLevel.Information,
+            "Goal progress saved for user {UserId}, activity {ActivityId}, date {Date}; activity XP change {ActivityChange}; weekly bonus change {WeeklyBonusChange}; total XP {TotalXp}",
+            entries.UserId, activityId, Format(date), change.ActivityChange, change.WeeklyBonusChange, change.Experience.TotalXp);
     public async Task<bool> IsAdmin()
     {
         await using var db = await entries.OpenAsync();

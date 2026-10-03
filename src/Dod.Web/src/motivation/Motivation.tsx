@@ -26,7 +26,7 @@ type MotivationDay = {
   experience: Experience;
   activities: DailyActivity[];
 };
-type XpEvent = { awarded: number; totalXp: number; leveledUp: boolean };
+type XpEvent = { awarded: number; totalXp: number; leveledUp: boolean; weeklyBonusChange?: number };
 export function ExperienceBar() {
   const [experience, setExperience] = useState<Experience | null>(null);
   const [error, setError] = useState("");
@@ -49,16 +49,18 @@ export function ExperienceBar() {
     void refresh();
     const changed = (event: Event) => {
       const detail = (event as CustomEvent<XpEvent>).detail;
+      const bonusNotice = detail.weeklyBonusChange === 50 ? " Includes a 50 XP weekly bonus."
+        : detail.weeklyBonusChange === -50 ? " The 50 XP weekly bonus was removed." : "";
       void refresh();
       if (detail.awarded > 0) {
         setNotice(
-          `Yoohoo! You gained ${detail.awarded} XP!${detail.leveledUp ? ` Level up — you reached level ${Math.floor(detail.totalXp / 100) + 1}!` : ""}`,
+          `Yoohoo! You gained ${detail.awarded} XP!${bonusNotice}${detail.leveledUp ? ` Level up — you reached level ${Math.floor(detail.totalXp / 100) + 1}!` : ""}`,
         );
         clearTimeout(timer.current);
         timer.current = setTimeout(() => setNotice(""), 6000);
       } else if (detail.awarded < 0) {
         setNotice(
-          `Report corrected. Your experience was adjusted by ${detail.awarded} XP.`,
+          `Report corrected. Your experience was adjusted by ${detail.awarded} XP.${bonusNotice}`,
         );
         clearTimeout(timer.current);
         timer.current = setTimeout(() => setNotice(""), 6000);
@@ -158,6 +160,7 @@ export function DailyActivities({ date }: { date: string }) {
       await api(`/api/motivation/${date}/activities/${id}`, "PUT", {
         completed,
       });
+      setRevision(value => value + 1);
       setMessage("Daily report saved.");
     } catch (e) {
       setError((e as Error).message);
@@ -234,13 +237,13 @@ export function DailyActivities({ date }: { date: string }) {
                   {!activity.isActive ? " · retired activity" : ""}
                 </p>
                 <div className="activity-actions">
-                  <button
-                    disabled={busy || !activity.canReport}
-                    aria-pressed={activity.completed === true}
-                    onClick={() => void report(activity.id, true)}
-                  >
+                  <label className="goal-checkbox">
+                    <input type="checkbox" checked={activity.completed === true}
+                      disabled={busy || !activity.canReport}
+                      aria-label={`${activity.name} met on ${date}`}
+                      onChange={event => void report(activity.id, event.target.checked)} />
                     Goal met
-                  </button>
+                  </label>
                   <button
                     disabled={busy || !activity.canReport}
                     aria-pressed={activity.completed === false}
@@ -256,7 +259,8 @@ export function DailyActivities({ date }: { date: string }) {
       </div>
       <p className="hint">
         One reward per activity per date. Corrections adjust your XP; repeated
-        saves do not add rewards. Points and wording are kept as they were when
+        saves do not add rewards. Tick or untick a goal for today or a past day;
+        completed weeks gain or lose their 50 XP bonus as needed. Points and wording are kept as they were when
         first reported.
       </p>
     </section>

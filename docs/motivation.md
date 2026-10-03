@@ -4,6 +4,8 @@
 
 Activities belong to your personal journal and do not require a challenge or friends. Select the journal date, then use **Daily activities**:
 
+The **Weekly goals** view shows Monday–Sunday with buttons for each date and previous/next week navigation. Select any past day, including a day without a weight or calorie entry. Tick **Goal met** to report completion; untick it or choose **Not this day** to correct a missed goal. The week grid, XP total and bonus refresh after saving. Failed saves preserve the displayed saved answer and show an error.
+
 - **No sweets:** choose **Goal met** if you avoided sweets for the whole day, or **Not this day** if you ate sweets. The initial reward is 10 XP.
 - **No food after cutoff:** report whether you avoided eating after the displayed time. Initially this is 20:00 and earns 10 XP. The cutoff refers to your own local clock; it is self-reported, not detected by the app.
 - **Weigh yourself:** saving a weight automatically earns 10 XP, once per journal date. You cannot manually check this activity off.
@@ -32,6 +34,8 @@ Levels currently recognize progress only. No feature is locked or unlocked yet, 
 A correction updates the saved result rather than adding another event. Changing **Goal met** to **Not this day** removes that day's XP and can lower your level. Changing it back restores the original amount, without increasing the maximum reward for that date. The popup describes negative adjustments separately.
 
 A full Monday–Sunday (UTC) week with every weekly goal completed earns **50 bonus XP**, independently of email opt-in. The first eligible week starts on the Monday after registration or upgrade. Corrections to closed weeks can add or remove that bonus. See [weekly rules and email summaries](weekly-emails.md).
+
+For example, correcting the last missing 10 XP goal in a closed eligible week adds **60 XP** (10 daily + 50 bonus). Unticking any required 10 XP goal removes **60 XP**. Repeating the same answer changes nothing; restoring it adds the same amount back. Other weeks and other users are unaffected. A full current week earns its bonus only once the week closes, and an onboarding week earns no weekly bonus.
 
 ## Admin panel
 
@@ -75,3 +79,11 @@ All routes require a signed-in session. Mutations also require the existing anti
 | `PUT /api/admin/activities/{id}` | Edit or retire an activity |
 
 Weight saves keep the existing `204 No Content` API response. Reward-producing endpoints include `X-XP-Change`, `X-XP-Total`, and `X-XP-Level-Up` headers. These drive the notification and refresh the authoritative XP display. Zero-change responses refresh the daily status without replaying a congratulation. Manual reports additionally return the change and experience as JSON.
+
+`X-XP-Weekly-Bonus-Change` identifies the bonus portion of the total adjustment. JSON report responses also expose `weeklyBonusChange` and `activityChange`. The client never calculates or awards XP itself.
+
+## Rules, transactions and diagnostics
+
+Pure completion and weekly bonus policies live in `Motivation/Domain`. Weekly roster and award persistence live in `Motivation/Persistence`, independent of email delivery. The application store performs report updates, bonus reconciliation and authoritative before/after XP reads in one SQLite transaction. Unique activity/date and user/week keys make repeated and concurrent saves idempotent; existing report snapshots preserve reward values through admin edits.
+
+API security middleware retains CSRF checks and no-store responses. Request logging middleware returns a server-generated `X-Request-ID` and logs route templates, status and elapsed time, without bodies, queries or authentication headers. Goal logs include internal user/activity IDs, date, daily XP change, bonus change and total XP; they omit weights, answer text and nicknames. No-op updates use Debug level. These logs describe committed changes, not a durable audit ledger.

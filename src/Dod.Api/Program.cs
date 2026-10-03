@@ -5,6 +5,7 @@ using Dod.Api.Settings;
 using Dod.Api.Social;
 using Dod.Api.Motivation;
 using Dod.Api.Notifications;
+using Dod.Api.Http;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
@@ -80,22 +81,11 @@ await app.Services.GetRequiredService<EntryStore>().InitializeAsync();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseRouting();
+app.UseMiddleware<ApiRequestLoggingMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();
-app.Use(async (ctx, next) =>
-{
-    if (ctx.Request.Path.StartsWithSegments("/api"))
-    {
-        ctx.Response.Headers.CacheControl = "no-store";
-        if (!HttpMethods.IsGet(ctx.Request.Method) && !HttpMethods.IsHead(ctx.Request.Method) && !HttpMethods.IsOptions(ctx.Request.Method))
-        {
-            try { await ctx.RequestServices.GetRequiredService<IAntiforgery>().ValidateRequestAsync(ctx); }
-            catch (AntiforgeryValidationException) { ctx.Response.StatusCode = 400; await ctx.Response.WriteAsJsonAsync(new { detail = "Session verification failed. Refresh and try again." }); return; }
-        }
-    }
-    await next(ctx);
-});
+app.UseMiddleware<ApiSecurityMiddleware>();
 app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 app.MapAccountEndpoints();
 app.MapEntryEndpoints();

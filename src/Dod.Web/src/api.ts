@@ -27,6 +27,7 @@ export async function apiFetch(
           awarded: Number(response.headers.get("X-XP-Change")),
           totalXp: Number(response.headers.get("X-XP-Total")),
           leveledUp: response.headers.get("X-XP-Level-Up") === "true",
+          weeklyBonusChange: Number(response.headers.get("X-XP-Weekly-Bonus-Change") ?? 0),
         },
       }),
     );

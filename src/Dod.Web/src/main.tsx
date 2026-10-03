@@ -2,6 +2,7 @@ import { consumeEmailLink } from "./social/emailLink";
 import { EmailSettings, EmailLinkAction } from "./social/EmailSettings";
 import { Brand } from "./Brand";
 import { ExperienceBar, DailyActivities } from "./motivation/Motivation";
+import { WeekGoals } from "./motivation/WeekGoals";
 import { Admin } from "./motivation/Admin";
 import { AccountGate, Profile, type User } from "./social/Account";
 import { Social } from "./social/Social";
@@ -193,6 +194,7 @@ function App({
             />
           </div>
         )}
+        {!loading && !error && <WeekGoals date={date} onSelectDate={setDate} />}
         {!loading && !error && <DailyActivities key={date} date={date} />}
         {!loading && !error && (
           <CalorieBalance entries={entries} through={date} />

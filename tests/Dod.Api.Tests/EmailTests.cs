@@ -1,3 +1,4 @@
+using Dod.Api.Motivation.Persistence;
 using System.Net;
 using System.Net.Sockets;
 using System.Net.Http.Json;
@@ -161,7 +162,9 @@ public sealed class EmailTests : IDisposable
         var message = transport.Sent.Last().Message;
         Assert.Equal("alice@example.com", message.To);
         Assert.StartsWith("[Test]", message.Subject);
-        Assert.Contains(clock.Week.AddDays(-14).ToString("yyyy-MM-dd"), message.Subject);
+        Assert.Contains(clock.Week.AddDays(-7).ToString("yyyy-MM-dd"), message.Subject);
+        Assert.Contains("Current week preview", message.Html);
+        Assert.Contains("no full week of data is required", message.Text);
         Assert.Contains("Stop weekly emails", message.Text);
         Assert.Equal(0, await Count(app, "SELECT COUNT(*) FROM EmailOutbox WHERE Kind='weekly'"));
         Assert.Equal(HttpStatusCode.BadRequest, (await user.PostAsync("/api/email/test-summary", null)).StatusCode);

@@ -1,3 +1,4 @@
+using Dod.Api.Motivation.Persistence;
 using System.Net.Mail;
 using System.Security.Cryptography;
 using System.Text;
@@ -6,7 +7,7 @@ using Dod.Api.Entries;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Data.Sqlite;
-using static Dod.Api.Notifications.WeeklyRules;
+using static Dod.Api.Motivation.Persistence.WeeklyRules;
 
 namespace Dod.Api.Notifications;
 
@@ -81,7 +82,7 @@ public sealed class EmailPreferencesStore(EntryStore entries, TimeProvider clock
     public async Task<string?> SendTest(string user, WeeklySummaryStore summaries)
     {
         if (!transport.Available) return "Email sending is not configured.";
-        var week = Monday(DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime)).AddDays(-7);
+        var week = Monday(DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime));
         var summary = await summaries.Build(user, week);
         await using var db = await entries.OpenAsync(); using var tx = db.BeginTransaction();
         string email, revision, nickname;
@@ -101,7 +102,13 @@ public sealed class EmailPreferencesStore(EntryStore entries, TimeProvider clock
             if (Convert.ToInt32(await cmd.ExecuteScalarAsync()) > 0)
                 return "A test summary is already queued, or was just sent. Please wait before trying again.";
         var message = EmailTemplates.Weekly(email, nickname, summary, PublicUrl, UnsubscribeUrl(user, revision));
-        message = message with { Subject = $"[Test] {message.Subject}" };
+        const string preview = "Current week preview: this week is still in progress. Missing entries and future days are not yet complete; no full week of data is required.";
+        message = message with
+        {
+            Subject = $"[Test] {message.Subject}",
+            Html = message.Html.Replace("<h1>", $"<p><strong>{preview}</strong></p><h1>"),
+            Text = $"{preview}\n\n{message.Text}"
+        };
         await Enqueue(db, tx, user, revision, "test", Day(week), message);
         tx.Commit(); return null;
     }

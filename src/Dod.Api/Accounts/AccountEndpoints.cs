@@ -1,3 +1,4 @@
+using Dod.Api.Motivation.Persistence;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
@@ -116,7 +117,7 @@ public static class AccountEndpoints
             : "INSERT INTO Users (Id, Nickname, NormalizedNickname, PasswordHash, WeeklyEligibleFrom) VALUES ($id,$nick,$normal,$hash,$eligible)";
         cmd.Parameters.AddWithValue("$id", id); cmd.Parameters.AddWithValue("$nick", input.Nickname); cmd.Parameters.AddWithValue("$normal", Normalize(input.Nickname)); cmd.Parameters.AddWithValue("$hash", hash);
         var today = DateOnly.FromDateTime(ctx.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow().UtcDateTime);
-        cmd.Parameters.AddWithValue("$eligible", Dod.Api.Notifications.WeeklyRules.Day(Dod.Api.Notifications.WeeklyRules.NextMonday(today)));
+        cmd.Parameters.AddWithValue("$eligible", Dod.Api.Motivation.Persistence.WeeklyRules.Day(Dod.Api.Motivation.Persistence.WeeklyRules.NextMonday(today)));
         try { if (await cmd.ExecuteNonQueryAsync() == 0) return Error("The original journal has already been claimed.", 409); }
         catch (SqliteException e) when (e.SqliteErrorCode == 19) { return Error("That nickname is already taken.", 409); }
         await SignIn(ctx, id); return Results.NoContent();

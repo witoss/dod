@@ -138,8 +138,9 @@ export function EmailSettings() {
             </button>
           )}
           <p className="hint">
-            Send yourself a test recap for the last completed week. Confirm your
-            saved address first; weekly emails can remain off.
+            Send yourself a preview of the current week using the data recorded
+            so far. A full week of data is not required. Confirm your saved
+            address first; weekly emails can remain off.
           </p>
           <button
             disabled={busy || !preferences.verified || !preferences.sendingAvailable}

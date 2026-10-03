@@ -1,3 +1,4 @@
+using Dod.Api.Motivation.Persistence;
 using System.Globalization;
 using Microsoft.Data.Sqlite;
 
@@ -98,7 +99,7 @@ public sealed class EntryStore(IConfiguration configuration, IHttpContextAccesso
         }
         if (version < 5)
         {
-            command.Parameters.AddWithValue("$today", Dod.Api.Notifications.WeeklyRules.Day(DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime)));
+            command.Parameters.AddWithValue("$today", Dod.Api.Motivation.Persistence.WeeklyRules.Day(DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime)));
             command.CommandText = """
                 ALTER TABLE Users ADD COLUMN IsAdmin INTEGER NOT NULL DEFAULT 0 CHECK (IsAdmin IN (0,1));
                 UPDATE Users SET IsAdmin=1 WHERE Id='legacy';
@@ -140,8 +141,8 @@ public sealed class EntryStore(IConfiguration configuration, IHttpContextAccesso
         if (version < 6)
         {
             var today = DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
-            command.Parameters.AddWithValue("$eligible", Dod.Api.Notifications.WeeklyRules.Day(Dod.Api.Notifications.WeeklyRules.NextMonday(today)));
-            command.Parameters.AddWithValue("$monday", Dod.Api.Notifications.WeeklyRules.Day(Dod.Api.Notifications.WeeklyRules.Monday(today)));
+            command.Parameters.AddWithValue("$eligible", Dod.Api.Motivation.Persistence.WeeklyRules.Day(Dod.Api.Motivation.Persistence.WeeklyRules.NextMonday(today)));
+            command.Parameters.AddWithValue("$monday", Dod.Api.Motivation.Persistence.WeeklyRules.Day(Dod.Api.Motivation.Persistence.WeeklyRules.Monday(today)));
             command.CommandText = """
                 ALTER TABLE Users ADD COLUMN WeeklyEligibleFrom TEXT NOT NULL DEFAULT '';
                 UPDATE Users SET WeeklyEligibleFrom=$eligible;

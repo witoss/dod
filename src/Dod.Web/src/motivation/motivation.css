@@ -95,6 +95,25 @@
   flex-wrap: wrap;
   gap: 6px;
 }
+.goal-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  font-weight: 600;
+}
+.goal-checkbox input { width: auto; margin: 0; accent-color: #2e7050; }
+.week-navigation { display: flex; flex-wrap: wrap; gap: 8px; }
+.week-goals .history-heading { flex-wrap: wrap; }
+.week-goal-grid { min-width: 620px; }
+.week-goal-grid caption { text-align: left; padding: 8px 0; font-size: 13px; }
+.week-goal-grid th button { padding: 8px; min-width: 58px; }
+.week-goal-grid th button[aria-pressed="true"] { outline: 3px solid #193a34; outline-offset: 2px; }
+.week-goal-grid td { text-align: center; }
+.week-goal-grid small { display: block; font-size: 11px; }
+.goal-complete { background: #d7efdf; color: #17472b; }
+.goal-incomplete { background: #fce0dc; color: #852d24; }
+.weekly-bonus { font-weight: 600; }
 .activity-actions button[aria-pressed="false"] {
   background: white;
   color: #193a34;

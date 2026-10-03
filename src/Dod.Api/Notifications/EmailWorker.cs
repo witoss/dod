@@ -1,5 +1,6 @@
+using Dod.Api.Motivation.Persistence;
 using Dod.Api.Entries;
-using static Dod.Api.Notifications.WeeklyRules;
+using static Dod.Api.Motivation.Persistence.WeeklyRules;
 
 namespace Dod.Api.Notifications;
 
