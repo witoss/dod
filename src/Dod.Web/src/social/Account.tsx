@@ -1,3 +1,4 @@
+import { Brand } from "../Brand";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api, apiFetch, resetCsrf } from "../api";
 import "./social.css";
@@ -98,9 +99,7 @@ export function AccountGate({
   if (user) return children(user, refresh, logout);
   return (
     <main className="account-page">
-      <a className="brand" href="/">
-        dod
-      </a>
+      <Brand />
       <h1>
         Your progress.
         <br />

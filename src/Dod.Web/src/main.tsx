@@ -1,3 +1,4 @@
+import { Brand } from "./Brand";
 import { ExperienceBar, DailyActivities } from "./motivation/Motivation";
 import { Admin } from "./motivation/Admin";
 import { AccountGate, Profile, type User } from "./social/Account";
@@ -65,9 +66,7 @@ function App({
   return (
     <main>
       <header>
-        <a className="brand" href="/">
-          dod<span>discipline over dopamine</span>
-        </a>
+        <Brand />
         <span className="badge">ONE DAY AT A TIME</span>
       </header>
       <ExperienceBar />

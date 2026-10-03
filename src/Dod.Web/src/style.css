@@ -24,21 +24,30 @@ header,
   gap: 20px;
 }
 .brand {
-  font:
-    bold 36px "Manrope",
-    sans-serif;
-  letter-spacing: -2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
   color: inherit;
   text-decoration: none;
 }
-.brand span {
-  display: inline-block;
-  font:
-    12px "DM Sans",
-    sans-serif;
+.brand-bird {
+  width: clamp(44px, 8vw, 60px);
+  height: auto;
+  flex-shrink: 0;
+}
+.brand-name {
+  font: bold clamp(30px, 5vw, 36px) "Manrope", sans-serif;
+  letter-spacing: -2px;
+}
+.brand-tagline {
+  font: 11px/1.4 "DM Sans", sans-serif;
   letter-spacing: 0;
-  margin-left: 18px;
-  max-width: 90px;
+  color: #526b5e;
+}
+.brand:focus-visible {
+  outline: 2px solid #32644f;
+  outline-offset: 6px;
+  border-radius: 8px;
 }
 .badge,
 .eyebrow {
