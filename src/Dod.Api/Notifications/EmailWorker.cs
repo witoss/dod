@@ -113,11 +113,11 @@ public sealed class EmailQueue(EntryStore entries, EmailPreferencesStore prefere
             state = "failed";
             logger.LogWarning("Email {Id} has an unreadable protected payload; marked failed", id);
         }
-        catch (Exception)
+        catch (Exception error)
         {
             state = attempt >= 6 ? "failed" : "pending";
-            // SMTP exceptions may include recipient addresses or server details: do not log them.
-            logger.LogWarning("Email {Id} attempt {Attempt} did not complete; state {State}", id, attempt, state);
+            logger.LogWarning("Email {Id} attempt {Attempt} did not complete; reason {Reason}; state {State}",
+                id, attempt, EmailFailure.Code(error), state);
         }
         using var finish = Command(db, null, """
             UPDATE EmailOutbox SET State=$state,Payload=CASE WHEN $state='pending' THEN Payload ELSE '' END,
@@ -125,7 +125,8 @@ public sealed class EmailQueue(EntryStore entries, EmailPreferencesStore prefere
             WHERE Id=$id AND State='sending' AND Attempts=$attempt AND LeaseUntil=$lease
             """, ("$state", state), ("$next", Now + Math.Min(21600, 60 * (1L << Math.Min(attempt, 8)))),
             ("$now", Now), ("$id", id), ("$attempt", attempt), ("$lease", lease));
-        await finish.ExecuteNonQueryAsync();
+        if (await finish.ExecuteNonQueryAsync() == 1 && state == "sent")
+            logger.LogInformation("Email {Id} accepted by SMTP on attempt {Attempt}", id, attempt);
         return true;
     }
 }
@@ -143,7 +144,10 @@ public sealed class EmailWorker(EmailQueue queue, ILogger<EmailWorker> logger) :
                     if (!await queue.ProcessOne(stoppingToken)) break;
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
-            catch (Exception) { logger.LogError("Weekly email worker failed; will retry on the next poll"); }
+            catch (Exception error)
+            {
+                logger.LogError("Weekly email worker failed; reason {Reason}; will retry on the next poll", EmailFailure.Code(error));
+            }
             try { await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken); }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
         }

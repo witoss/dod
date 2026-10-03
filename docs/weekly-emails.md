@@ -54,7 +54,7 @@ Apply configuration when recreating the app container with the normal deployment
 
 ## Queue operations and verification
 
-Pending payloads are encrypted using ASP.NET Data Protection. Tokens are stored as hashes in preferences; unsubscribe tokens are protected and scoped to an address revision. Terminal queue rows retain IDs, week, attempts and state, but message content is erased. Queue logs include IDs and retry state, never message content, addresses, SMTP credentials or raw exceptions.
+Pending payloads are encrypted using ASP.NET Data Protection. Tokens are stored as hashes in preferences; unsubscribe tokens are protected and scoped to an address revision. Terminal queue rows retain IDs, week, attempts and state, but message content is erased. Queue logs include IDs, retry state and safe error categories, never message content, addresses, SMTP credentials or raw exception messages. A successful submission logs `accepted by SMTP`; this confirms provider acceptance, not delivery to the inbox.
 
 Claims use a two-minute lease and each SMTP attempt has a 45-second deadline. Failed sends retry after 2, 4, 8, 16 and 32 minutes, then become `failed` on the sixth failure. Expired leases are reclaimed after restart. Old recaps, changed addresses, disabled preferences and expired verification messages are cancelled before sending. An SMTP message already in flight cannot be recalled. SMTP delivery is at-least-once: a crash after server acceptance but before recording success can duplicate delivery. Stable Message-ID helps diagnostics but does not guarantee provider deduplication.
 
@@ -66,6 +66,25 @@ Before enabling broadly, verify using an operator account:
 4. Check the next eligible Monday recap: dates, weight change, grid, XP, rank and both email formats. Newly created accounts need one full eligible week first.
 5. Open the unsubscribe link and press the button; Profile should show summaries disabled. Check address changes and resend after the one-minute cooldown.
 6. In staging with an SMTP capture server, stop SMTP, observe retry state, restart the app, restore SMTP, and verify delivery resumes. Never test failures by sending to real unrelated addresses.
+
+If confirmation does not arrive, first check that the deployed Compose file has the email environment mappings and that Profile offers **Resend confirmation**. Press it once, allow a minute, then inspect the worker logs:
+
+```bash
+grep -n 'Email__Enabled' /opt/dod/compose.yaml
+docker logs --since 15m --tail 500 dod-production-app-1 2>&1 | grep -Ei 'EmailQueue|EmailWorker|attempt|accepted by SMTP|worker failed|payload'
+```
+
+| Log reason | Check |
+| --- | --- |
+| `smtp-authentication` or `smtp-535-*` | SMTP username/password, token permissions and expiry |
+| `smtp-550-*` | Provider sender-domain verification and recipient rejection |
+| `tls-handshake` or `tls-authentication` | Port/TLS pairing, certificates and server clock |
+| `connection-*` | SMTP hostname, DNS, outbound firewall and provider connectivity |
+| `timeout-or-shutdown` | Slow connection, blocked port or container restart |
+| `database-*` | Database availability and writable persistent storage |
+| `accepted by SMTP` | Provider delivery logs, suppression list and recipient spam folder |
+
+If no attempts appear and delivery is unavailable, update the server Compose file and recreate the app. If submissions fail, identify the safe reason before changing credentials. For Cloudflare, use `smtp.mx.cloudflare.net`, port `465`, `SslOnConnect`, literal username `api_token`, and the token value as password. The token needs **Email Sending: Edit**, and the sender domain must be onboarded under **Email Sending**. See [Cloudflare's SMTP troubleshooting](https://developers.cloudflare.com/email-service/api/send-emails/smtp/).
 
 For troubleshooting, inspect only safe queue metadata with SQLite (do not select Email, Payload, TokenHash or credentials):
 

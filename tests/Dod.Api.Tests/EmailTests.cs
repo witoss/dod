@@ -12,6 +12,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.FileProviders;
 using Xunit;
 
@@ -22,6 +23,7 @@ public sealed class EmailTests : IDisposable
     private readonly string directory = Path.Combine(Path.GetTempPath(), "dod-email-" + Guid.NewGuid());
     private readonly Clock clock = new();
     private readonly Transport transport = new();
+    private readonly QueueLogs logs = new();
     private sealed class Clock : TimeProvider
     {
         public readonly DateOnly Week = WeeklyRules.NextMonday(DateOnly.FromDateTime(DateTime.UtcNow));
@@ -34,11 +36,13 @@ public sealed class EmailTests : IDisposable
     {
         public bool Available { get; set; } = true;
         public bool Fail;
+        public Exception? Failure;
         public TaskCompletionSource? SendEntered;
         public TaskCompletionSource? SendRelease;
         public List<(EmailMessage Message, string Id)> Sent = [];
         public async Task Send(EmailMessage message, string id, CancellationToken cancellationToken)
         {
+            if (Failure is not null) throw Failure;
             if (Fail) throw new IOException("simulated SMTP failure");
             SendEntered?.TrySetResult();
             if (SendRelease is not null) await SendRelease.Task.WaitAsync(cancellationToken);
@@ -52,6 +56,7 @@ public sealed class EmailTests : IDisposable
         { ["Storage:Path"] = Path.Combine(directory, "test.db"), ["Email:PublicUrl"] = "https://journal.example", ["Tracker:Password"] = "original-secret" }));
         builder.ConfigureServices(services =>
         {
+            services.AddSingleton<ILoggerProvider>(logs);
             services.RemoveAll<TimeProvider>(); services.AddSingleton<TimeProvider>(clock);
             services.RemoveAll<IEmailTransport>(); services.AddSingleton<IEmailTransport>(transport);
             // Drive the real queue deterministically, without a background poll racing test operations.
@@ -299,6 +304,35 @@ public sealed class EmailTests : IDisposable
         Assert.DoesNotContain("<img", message.Html); Assert.DoesNotContain("<script", message.Html);
         Assert.Contains("&lt;script&gt;", message.Html); Assert.Contains("1.00 kg gained", message.Text);
         Assert.Contains("Stop weekly emails:", message.Text); Assert.Contains("Completed (10 XP)", message.Text);
+    }
+    private sealed class QueueLogs : ILoggerProvider
+    {
+        public List<string> Messages { get; } = [];
+        public ILogger CreateLogger(string categoryName) => new QueueLogger(categoryName, Messages);
+        public void Dispose() { }
+        private sealed class QueueLogger(string category, List<string> messages) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+            public bool IsEnabled(LogLevel logLevel) => true;
+            public void Log<TState>(LogLevel level, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            {
+                if (category == typeof(EmailQueue).FullName) messages.Add(formatter(state, exception) + exception?.Message);
+            }
+        }
+    }
+    [Fact]
+    public async Task QueueLogsExposeSafeFailureReasonAndAcceptanceWithoutSensitiveDetails()
+    {
+        using var app = App(); using var user = await Register(app); await Save(user);
+        var queue = app.Services.GetRequiredService<EmailQueue>();
+        const string secret = "private-token alice@example.com";
+        transport.Failure = new MailKit.Security.AuthenticationException(secret);
+        Assert.True(await queue.ProcessOne());
+        Assert.Contains(logs.Messages, message => message.Contains("reason smtp-authentication"));
+        Assert.All(logs.Messages, message => { Assert.DoesNotContain(secret, message); Assert.DoesNotContain("alice@example.com", message); });
+        transport.Failure = null; clock.Now = clock.Now.AddMinutes(3);
+        Assert.True(await queue.ProcessOne());
+        Assert.Contains(logs.Messages, message => message.Contains("accepted by SMTP on attempt 2"));
     }
     public void Dispose() { SqliteConnection.ClearAllPools(); if (Directory.Exists(directory)) Directory.Delete(directory, true); }
 }
