@@ -1,7 +1,12 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api, apiFetch, resetCsrf } from "../api";
 import "./social.css";
-export type User = { id: string; nickname: string; hasAvatar: boolean };
+export type User = {
+  id: string;
+  nickname: string;
+  hasAvatar: boolean;
+  isAdmin?: boolean;
+};
 export function Avatar({
   user,
   revision = 0,

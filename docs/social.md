@@ -62,6 +62,8 @@ Images are stored in SQLite, so database backups include them. They are served o
 - Data-protection keys live alongside SQLite (`/data/keys` in Docker), so sessions survive container replacement. Protect that volume and its backups: it contains personal data, password hashes, and session-encryption keys.
 - Schema migration 4 runs transactionally. Existing original/v2/v3 data is preserved under a reserved owner. Do not roll back to a v3 image against a v4 database; restore a deliberate pre-upgrade backup with the matching older image if necessary.
 
+The original owner is also the administrator after migration 5; see [daily activities and administration](motivation.md).
+
 The server remains a single app instance with SQLite. No new paid service or database server is required.
 
 ## API additions

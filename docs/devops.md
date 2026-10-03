@@ -41,7 +41,7 @@ For a cold backup: stop the app with `docker compose stop app`, locate the volum
 
 After the manual deployment works, configure the prepared workflow with a GitHub `production` environment with a required reviewer. A deployment job should depend on CI, deploy the tested SHA, wait for health, and preserve the previous SHA for rollback. Prefer short-lived cloud identity credentials where your selected provider supports them. Scope deployment credentials to this application.
 
-Rollback means redeploying the previous image SHA. Database changes also need a compatibility plan: startup now uses SQLite `user_version` migrations. Version 2 adds the calorie reference; version 3 adds optional daily calories eaten. Version 4 adds individual accounts and social features, reserving existing measurements for the original owner until claimed. These migrations preserve journal measurements. Future schema changes need a new migration version and a backup before deployment. A binary rollback cannot undo incompatible schema changes.
+Rollback means redeploying the previous image SHA. Database changes also need a compatibility plan: startup now uses SQLite `user_version` migrations. Version 2 adds the calorie reference; version 3 adds optional daily calories eaten. Version 4 adds individual accounts and social features, reserving existing measurements for the original owner until claimed. Version 5 adds activity reports, XP, and the original owner’s admin role without retroactive rewards. These migrations preserve journal measurements. Future schema changes need a new migration version and a backup before deployment. A binary rollback cannot undo incompatible schema changes.
 
 ## 6. Extend when needed
 

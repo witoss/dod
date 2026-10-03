@@ -1,3 +1,5 @@
+using Dod.Api.Motivation;
+
 namespace Dod.Api.Entries;
 
 public record DailyEntry(DateOnly Date, decimal? WeightKg, int? CaloriesBurned)
@@ -21,11 +23,12 @@ public static class EntryEndpoints
             await store.SaveEatenAsync(date, input.CaloriesEaten);
             return Results.NoContent();
         });
-        group.MapPut("/{date}/weight", async (DateOnly date, WeightInput input, EntryStore store) =>
+        group.MapPut("/{date}/weight", async (DateOnly date, WeightInput input, MotivationStore store, HttpContext context) =>
         {
             if (input.WeightKg is <= 0 or > 1000)
                 return Results.ValidationProblem(new Dictionary<string, string[]> { ["weightKg"] = ["Enter a weight greater than 0 and no more than 1000 kg."] });
-            await store.SaveWeightAsync(date, input.WeightKg);
+            var change = await store.RecordWeight(date, input.WeightKg);
+            MotivationEndpoints.WriteXpHeaders(context, change);
             return Results.NoContent();
         });
         group.MapPut("/{date}/calories", async (DateOnly date, CaloriesInput input, EntryStore store) =>

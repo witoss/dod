@@ -18,6 +18,7 @@ A personal journal for morning weight and evening calories burned, built with .N
 - [12. Future ideas](#12-future-ideas)
 - [VPS deployment tutorial](docs/vps.md)
 - [Accounts, friends, challenges, and upgrade guide](docs/social.md)
+- [Daily activities, XP, levels, and admin guide](docs/motivation.md)
 
 ## 1. Install and run the app
 
@@ -103,6 +104,14 @@ Use a consistent definition of calories burned, such as the total daily number r
 
 Use **Friends & challenges** to search by exact nickname, send and accept friend requests, create a challenge for a chosen number of weeks, and invite your accepted friends. Each invited person accepts before sharing progress. A challenge's leaderboard calculates kilograms lost from measurements inside its dates. Use **Profile** to edit your nickname or upload an avatar. Challenge participants can see your daily weights within the challenge dates. Calories and weights outside the challenge remain private. [Read the full guide and scoring rules](docs/social.md).
 
+### Daily activities and experience
+
+The top of the page shows your **XP and level**. In **Daily activities**, report whether you met each daily goal, such as avoiding sweets or eating after the displayed cutoff. The starter goals award 10 XP each. Saving a weight automatically earns 10 XP once per date; corrections do not award it twice. New rewards show a congratulatory popup.
+
+Every 100 XP advances one level. Levels do not unlock features yet. Manual corrections adjust XP and can lower a level. Activities use UTC dates for XP eligibility; future dates cannot earn rewards.
+
+The original journal owner has an **Admin** tab for viewing all users and challenges and creating or editing activity rules. Existing weights are preserved but receive no retroactive XP. See [the detailed rules, admin guide, and migration notes](docs/motivation.md).
+
 ### Kilograms lost
 
 The main page shows **kg lost**: your earliest recorded weight minus your latest recorded weight, ordered by entry date across the whole journal. For example, 90 kg followed by 87.5 kg shows **2.50 kg lost**. A negative value means weight gained. Days without weight are ignored; one weight shows 0.00, and no weights shows a dash. Saving or correcting a weight updates the summary. Selecting a date or calorie chart period does not limit this all-time total.
@@ -179,7 +188,7 @@ npm --prefix src/Dod.Web test
 npm --prefix src/Dod.Web run build
 ```
 
-Backend integration tests call the HTTP API and use temporary real SQLite databases. They check independent updates, validation, password enforcement, persistence, reference settings, and upgrading the original database without losing measurements.
+Backend integration tests call the HTTP API and use temporary real SQLite databases. Motivation tests cover once-per-day rewards, concurrent weight saves, corrected reports, level boundaries, admin authorization, retired activities, reward snapshots, and migration from the previous schema. They check independent updates, validation, password enforcement, persistence, reference settings, and upgrading the original database without losing measurements.
 
 Frontend tests cover local calendar dates and balance calculations, including missing entries, zero values, and changing the reference. The frontend build checks TypeScript and generates production assets. Automated browser tests are not currently part of CI.
 
@@ -252,7 +261,7 @@ The old `TRACKER_PASSWORD` is used only to claim the reserved original journal, 
 
 The reference is stored separately from daily measurements. The frontend derives balances from the saved reference and the existing calorie entries. Daily intake overrides are stored on the entry as nullable `CaloriesEaten`. A null means use the reference; zero is a real measurement. Balances are calculated when displayed, so changing the reference affects only days without overrides.
 
-SQLite's `user_version` records the schema version. The version 2 startup migration adds the reference table in a transaction and adopts the original unversioned database without deleting entries. Version 3 adds nullable `CaloriesEaten` to existing entries, leaving their measurements intact. Version 4 introduces accounts, per-user journal ownership, friendships, challenges, and avatars. Existing entries and the reference are reserved for the original owner until claimed. Tests exercise upgrades from older schemas without losing measurements. Future schema changes should introduce a new migration version.
+SQLite's `user_version` records the schema version. The version 2 startup migration adds the reference table in a transaction and adopts the original unversioned database without deleting entries. Version 3 adds nullable `CaloriesEaten` to existing entries, leaving their measurements intact. Version 4 introduces accounts, per-user journal ownership, friendships, challenges, and avatars. Existing entries and the reference are reserved for the original owner until claimed. Tests exercise upgrades from older schemas without losing measurements. Version 5 adds activity definitions, daily reports, and the original owner’s admin role. Existing weights are preserved with zero retrospective XP. Future schema changes should introduce a new migration version.
 
 ### Step 7: Package one deployable app
 

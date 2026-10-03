@@ -23,7 +23,7 @@ public sealed class EntryStore(IConfiguration configuration, IHttpContextAccesso
         command.Transaction = transaction;
         command.CommandText = "PRAGMA user_version";
         var version = Convert.ToInt32(await command.ExecuteScalarAsync());
-        if (version > 4)
+        if (version > 5)
             throw new InvalidOperationException("The database was created by a newer version of DOD.");
 
         // Version 1 originally had no user_version. Adopt it without replacing any entries.
@@ -93,6 +93,46 @@ public sealed class EntryStore(IConfiguration configuration, IHttpContextAccesso
                     PRIMARY KEY(ChallengeId, UserId)
                 );
                 PRAGMA user_version=4;
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+        if (version < 5)
+        {
+            command.CommandText = """
+                ALTER TABLE Users ADD COLUMN IsAdmin INTEGER NOT NULL DEFAULT 0 CHECK (IsAdmin IN (0,1));
+                UPDATE Users SET IsAdmin=1 WHERE Id='legacy';
+                CREATE TABLE Activities (
+                    Id TEXT PRIMARY KEY,
+                    Name TEXT NOT NULL,
+                    Description TEXT NOT NULL,
+                    Kind TEXT NOT NULL CHECK (Kind IN ('manual','weight')),
+                    Points INTEGER NOT NULL CHECK (Points BETWEEN 1 AND 1000),
+                    CutoffTime TEXT NULL,
+                    IsActive INTEGER NOT NULL CHECK (IsActive IN (0,1)),
+                    AvailableFrom TEXT NOT NULL
+                );
+                CREATE UNIQUE INDEX SingleWeightActivity ON Activities(Kind) WHERE Kind='weight';
+                INSERT INTO Activities VALUES
+                    ('weight','Weigh yourself','Save your weight in your journal. Points are awarded automatically once per date.','weight',10,NULL,1,date('now')),
+                    ('no-sweets','No sweets','Did you avoid sweets for this whole day?','manual',10,NULL,1,date('now')),
+                    ('no-late-food','No food after cutoff','Did you avoid eating after the cutoff time for this day?','manual',10,'20:00',1,date('now'));
+                CREATE TABLE ActivityReports (
+                    UserId TEXT NOT NULL REFERENCES Users(Id),
+                    ActivityId TEXT NOT NULL REFERENCES Activities(Id),
+                    Date TEXT NOT NULL,
+                    Completed INTEGER NOT NULL CHECK (Completed IN (0,1)),
+                    Points INTEGER NOT NULL CHECK (Points BETWEEN 0 AND 1000),
+                    Name TEXT NOT NULL,
+                    Description TEXT NOT NULL,
+                    CutoffTime TEXT NULL,
+                    PRIMARY KEY(UserId,ActivityId,Date)
+                );
+                -- Existing weights remain recorded but earn no retrospective XP.
+                INSERT INTO ActivityReports
+                    SELECT UserId,'weight',Date,1,0,'Weigh yourself',
+                        'Recorded before the XP system was introduced.',NULL
+                    FROM Entries WHERE WeightKg IS NOT NULL;
+                PRAGMA user_version=5;
                 """;
             await command.ExecuteNonQueryAsync();
         }

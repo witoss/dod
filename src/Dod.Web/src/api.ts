@@ -20,6 +20,17 @@ export async function apiFetch(
   const response = await fetch(url, init);
   if (response.status === 401 && !url.startsWith("/api/account/"))
     window.dispatchEvent(new Event("dod-session-expired"));
+  if (response.ok && response.headers.has("X-XP-Change")) {
+    window.dispatchEvent(
+      new CustomEvent("dod-xp-change", {
+        detail: {
+          awarded: Number(response.headers.get("X-XP-Change")),
+          totalXp: Number(response.headers.get("X-XP-Total")),
+          leveledUp: response.headers.get("X-XP-Level-Up") === "true",
+        },
+      }),
+    );
+  }
   return response;
 }
 export async function api<T = void>(

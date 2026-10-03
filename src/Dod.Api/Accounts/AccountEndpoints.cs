@@ -30,10 +30,10 @@ public static class AccountEndpoints
             if (ctx.User.Identity?.IsAuthenticated != true) return Results.Unauthorized();
             await using var db = await store.OpenAsync();
             using var cmd = db.CreateCommand();
-            cmd.CommandText = "SELECT Nickname, Avatar IS NOT NULL FROM Users WHERE Id=$id";
+            cmd.CommandText = "SELECT Nickname, Avatar IS NOT NULL, IsAdmin FROM Users WHERE Id=$id";
             cmd.Parameters.AddWithValue("$id", store.UserId);
             using var row = await cmd.ExecuteReaderAsync();
-            return await row.ReadAsync() ? Results.Ok(new { id = store.UserId, nickname = row.GetString(0), hasAvatar = row.GetBoolean(1) }) : Results.Unauthorized();
+            return await row.ReadAsync() ? Results.Ok(new { id = store.UserId, nickname = row.GetString(0), hasAvatar = row.GetBoolean(1), isAdmin = row.GetBoolean(2) }) : Results.Unauthorized();
         });
         group.MapPost("/register", (Credentials input, HttpContext ctx, EntryStore store) => Register(input, ctx, store, false, app.Configuration)).RequireRateLimiting("accounts");
         group.MapPost("/claim", (Credentials input, HttpContext ctx, EntryStore store) => Register(input, ctx, store, true, app.Configuration)).RequireRateLimiting("accounts");

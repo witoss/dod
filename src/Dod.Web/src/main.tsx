@@ -1,3 +1,5 @@
+import { ExperienceBar, DailyActivities } from "./motivation/Motivation";
+import { Admin } from "./motivation/Admin";
 import { AccountGate, Profile, type User } from "./social/Account";
 import { Social } from "./social/Social";
 import { apiFetch } from "./api";
@@ -37,7 +39,9 @@ function App({
   refreshAccount: () => Promise<void>;
   logout: () => Promise<void>;
 }) {
-  const [tab, setTab] = useState<"journal" | "social" | "profile">("journal");
+  const [tab, setTab] = useState<"journal" | "social" | "profile" | "admin">(
+    "journal",
+  );
   const [entries, setEntries] = useState<Entry[]>([]);
   const [date, setDate] = useState(localDate());
   const [loading, setLoading] = useState(true);
@@ -66,6 +70,7 @@ function App({
         </a>
         <span className="badge">ONE DAY AT A TIME</span>
       </header>
+      <ExperienceBar />
       <nav className="social-tabs" aria-label="Main navigation">
         <button
           aria-pressed={tab === "journal"}
@@ -85,11 +90,26 @@ function App({
         >
           {user.nickname} · Profile
         </button>
-        <button onClick={() => void logout().catch((e) => setAccountError(e.message))}>
+        {user.isAdmin && (
+          <button
+            aria-pressed={tab === "admin"}
+            onClick={() => setTab("admin")}
+          >
+            Admin
+          </button>
+        )}
+        <button
+          onClick={() => void logout().catch((e) => setAccountError(e.message))}
+        >
           Sign out
         </button>
       </nav>
-      {accountError && <p role="alert" className="error">{accountError}</p>}
+      {accountError && (
+        <p role="alert" className="error">
+          {accountError}
+        </p>
+      )}
+      {tab === "admin" && user.isAdmin && <Admin />}
       {tab === "social" && <Social />}
       {tab === "profile" && <Profile user={user} refresh={refreshAccount} />}
       <div hidden={tab !== "journal"}>
@@ -167,6 +187,7 @@ function App({
             />
           </div>
         )}
+        {!loading && !error && <DailyActivities key={date} date={date} />}
         {!loading && !error && (
           <CalorieBalance entries={entries} through={date} />
         )}
