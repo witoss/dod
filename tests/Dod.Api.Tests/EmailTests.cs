@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Sockets;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -330,9 +331,44 @@ public sealed class EmailTests : IDisposable
         Assert.True(await queue.ProcessOne());
         Assert.Contains(logs.Messages, message => message.Contains("reason smtp-authentication"));
         Assert.All(logs.Messages, message => { Assert.DoesNotContain(secret, message); Assert.DoesNotContain("alice@example.com", message); });
-        transport.Failure = null; clock.Now = clock.Now.AddMinutes(3);
+        transport.Failure = new InvalidOperationException(secret); clock.Now = clock.Now.AddMinutes(3);
         Assert.True(await queue.ProcessOne());
-        Assert.Contains(logs.Messages, message => message.Contains("accepted by SMTP on attempt 2"));
+        Assert.Contains(logs.Messages, message => message.Contains("unexpected-System.InvalidOperationException; stage transport"));
+        Assert.All(logs.Messages, message => { Assert.DoesNotContain(secret, message); Assert.DoesNotContain("alice@example.com", message); });
+        transport.Failure = null; clock.Now = clock.Now.AddMinutes(5);
+        Assert.True(await queue.ProcessOne());
+        Assert.Contains(logs.Messages, message => message.Contains("accepted by SMTP on attempt 3"));
+    }
+    [Fact]
+    public async Task SmtpDiagnosticsIdentifyAuthenticationStageWhenServerDoesNotOfferAuth()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var server = Task.Run(async () =>
+        {
+            using var socket = await listener.AcceptTcpClientAsync(timeout.Token);
+            await using var stream = socket.GetStream();
+            using var reader = new StreamReader(stream);
+            await using var writer = new StreamWriter(stream) { NewLine = "\r\n", AutoFlush = true };
+            await writer.WriteLineAsync("220 localhost Test SMTP");
+            Assert.StartsWith("EHLO ", await reader.ReadLineAsync(timeout.Token));
+            await writer.WriteLineAsync("250 localhost");
+        }, timeout.Token);
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Email:Enabled"] = "true", ["Email:Host"] = "127.0.0.1", ["Email:Port"] = port.ToString(),
+            ["Email:Security"] = "None", ["Email:PublicUrl"] = "http://localhost", ["Email:From"] = "sender@example.com",
+            ["Email:Username"] = "api_token", ["Email:Password"] = "test-only-secret"
+        }).Build();
+        var transport = new SmtpEmailTransport(config, new EnvironmentStub("Development"));
+        var error = await Assert.ThrowsAsync<NotSupportedException>(() => transport.Send(
+            new("recipient@example.com", "Test", "<p>Test</p>", "Test"), "test-id", timeout.Token));
+        await server;
+        Assert.Equal("authenticate", EmailFailure.Stage(error));
+        Assert.Equal("unexpected-System.NotSupportedException", EmailFailure.Code(error));
+        Assert.DoesNotContain("test-only-secret", EmailFailure.Code(error));
     }
     public void Dispose() { SqliteConnection.ClearAllPools(); if (Directory.Exists(directory)) Directory.Delete(directory, true); }
 }

@@ -54,7 +54,7 @@ Apply configuration when recreating the app container with the normal deployment
 
 ## Queue operations and verification
 
-Pending payloads are encrypted using ASP.NET Data Protection. Tokens are stored as hashes in preferences; unsubscribe tokens are protected and scoped to an address revision. Terminal queue rows retain IDs, week, attempts and state, but message content is erased. Queue logs include IDs, retry state and safe error categories, never message content, addresses, SMTP credentials or raw exception messages. A successful submission logs `accepted by SMTP`; this confirms provider acceptance, not delivery to the inbox.
+Pending payloads are encrypted using ASP.NET Data Protection. Tokens are stored as hashes in preferences; unsubscribe tokens are protected and scoped to an address revision. Terminal queue rows retain IDs, week, attempts and state, but message content is erased. Queue logs include IDs, retry state, safe error categories and the failing SMTP step, never message content, addresses, SMTP credentials or raw exception messages. A successful submission logs `accepted by SMTP`; this confirms provider acceptance, not delivery to the inbox.
 
 Claims use a two-minute lease and each SMTP attempt has a 45-second deadline. Failed sends retry after 2, 4, 8, 16 and 32 minutes, then become `failed` on the sixth failure. Expired leases are reclaimed after restart. Old recaps, changed addresses, disabled preferences and expired verification messages are cancelled before sending. An SMTP message already in flight cannot be recalled. SMTP delivery is at-least-once: a crash after server acceptance but before recording success can duplicate delivery. Stable Message-ID helps diagnostics but does not guarantee provider deduplication.
 
@@ -82,6 +82,7 @@ docker logs --since 15m --tail 500 dod-production-app-1 2>&1 | grep -Ei 'EmailQu
 | `connection-*` | SMTP hostname, DNS, outbound firewall and provider connectivity |
 | `timeout-or-shutdown` | Slow connection, blocked port or container restart |
 | `database-*` | Database availability and writable persistent storage |
+| `unexpected-<exception type>` | Use the exception type and `stage` (prepare, connect, authenticate, send, disconnect) to identify the failing operation; raw messages remain private |
 | `accepted by SMTP` | Provider delivery logs, suppression list and recipient spam folder |
 
 If no attempts appear and delivery is unavailable, update the server Compose file and recreate the app. If submissions fail, identify the safe reason before changing credentials. For Cloudflare, use `smtp.mx.cloudflare.net`, port `465`, `SslOnConnect`, literal username `api_token`, and the token value as password. The token needs **Email Sending: Edit**, and the sender domain must be onboarded under **Email Sending**. See [Cloudflare's SMTP troubleshooting](https://developers.cloudflare.com/email-service/api/send-emails/smtp/).

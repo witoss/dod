@@ -92,6 +92,7 @@ public sealed class EmailQueue(EntryStore entries, EmailPreferencesStore prefere
             tx.Commit();
         }
         var state = "sent";
+        var stage = "preferences";
         try
         {
             // Final check before network I/O. An already accepted SMTP message cannot be recalled.
@@ -105,7 +106,10 @@ public sealed class EmailQueue(EntryStore entries, EmailPreferencesStore prefere
             {
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 timeout.CancelAfter(TimeSpan.FromSeconds(45));
-                await transport.Send(preferences.Decode(payload), id, timeout.Token);
+                stage = "decode";
+                var message = preferences.Decode(payload);
+                stage = "transport";
+                await transport.Send(message, id, timeout.Token);
             }
         }
         catch (Exception e) when (e is System.Security.Cryptography.CryptographicException or System.Text.Json.JsonException)
@@ -116,8 +120,8 @@ public sealed class EmailQueue(EntryStore entries, EmailPreferencesStore prefere
         catch (Exception error)
         {
             state = attempt >= 6 ? "failed" : "pending";
-            logger.LogWarning("Email {Id} attempt {Attempt} did not complete; reason {Reason}; state {State}",
-                id, attempt, EmailFailure.Code(error), state);
+            logger.LogWarning("Email {Id} attempt {Attempt} did not complete; reason {Reason}; stage {Stage}; state {State}",
+                id, attempt, EmailFailure.Code(error), EmailFailure.Stage(error) ?? stage, state);
         }
         using var finish = Command(db, null, """
             UPDATE EmailOutbox SET State=$state,Payload=CASE WHEN $state='pending' THEN Payload ELSE '' END,

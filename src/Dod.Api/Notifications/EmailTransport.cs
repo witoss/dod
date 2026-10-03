@@ -28,25 +28,40 @@ public sealed class SmtpEmailTransport(IConfiguration config, IHostEnvironment e
     }
     public async Task Send(EmailMessage message, string id, CancellationToken cancellationToken)
     {
-        if (!Available) throw new InvalidOperationException("Email sending is not configured.");
-        var security = config["Email:Security"] ?? "StartTls";
-        var options = security switch
+        var stage = "prepare";
+        try
         {
-            "StartTls" => SecureSocketOptions.StartTls,
-            "SslOnConnect" => SecureSocketOptions.SslOnConnect,
-            "None" when environment.IsDevelopment() => SecureSocketOptions.None,
-            _ => throw new InvalidOperationException("Use StartTls or SslOnConnect for production email.")
-        };
-        using var mime = new MimeMessage();
-        mime.From.Add(MailboxAddress.Parse(config["Email:From"]!));
-        mime.To.Add(MailboxAddress.Parse(message.To));
-        mime.Subject = message.Subject; mime.MessageId = $"{id}@{new Uri(config["Email:PublicUrl"]!).Host}";
-        mime.Body = new BodyBuilder { HtmlBody = message.Html, TextBody = message.Text }.ToMessageBody();
-        using var client = new SmtpClient(); client.Timeout = 30000;
-        await client.ConnectAsync(config["Email:Host"]!, config.GetValue("Email:Port", 587), options, cancellationToken);
-        if (!string.IsNullOrWhiteSpace(config["Email:Username"]))
-            await client.AuthenticateAsync(config["Email:Username"]!, config["Email:Password"] ?? "", cancellationToken);
-        await client.SendAsync(mime, cancellationToken);
-        await client.DisconnectAsync(true, cancellationToken);
+            if (!Available) throw new InvalidOperationException("Email sending is not configured.");
+            var security = config["Email:Security"] ?? "StartTls";
+            var options = security switch
+            {
+                "StartTls" => SecureSocketOptions.StartTls,
+                "SslOnConnect" => SecureSocketOptions.SslOnConnect,
+                "None" when environment.IsDevelopment() => SecureSocketOptions.None,
+                _ => throw new InvalidOperationException("Use StartTls or SslOnConnect for production email.")
+            };
+            using var mime = new MimeMessage();
+            mime.From.Add(MailboxAddress.Parse(config["Email:From"]!));
+            mime.To.Add(MailboxAddress.Parse(message.To));
+            mime.Subject = message.Subject; mime.MessageId = $"{id}@{new Uri(config["Email:PublicUrl"]!).Host}";
+            mime.Body = new BodyBuilder { HtmlBody = message.Html, TextBody = message.Text }.ToMessageBody();
+            using var client = new SmtpClient(); client.Timeout = 30000;
+            stage = "connect";
+            await client.ConnectAsync(config["Email:Host"]!, config.GetValue("Email:Port", 587), options, cancellationToken);
+            if (!string.IsNullOrWhiteSpace(config["Email:Username"]))
+            {
+                stage = "authenticate";
+                await client.AuthenticateAsync(config["Email:Username"]!, config["Email:Password"] ?? "", cancellationToken);
+            }
+            stage = "send";
+            await client.SendAsync(mime, cancellationToken);
+            stage = "disconnect";
+            await client.DisconnectAsync(true, cancellationToken);
+        }
+        catch (Exception error)
+        {
+            EmailFailure.SetStage(error, stage);
+            throw;
+        }
     }
 }
