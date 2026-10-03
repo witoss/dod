@@ -2,6 +2,8 @@
 
 A personal journal for morning weight and evening calories burned, built with .NET 10, React, and SQLite. This README is both a guide to using the app and a tutorial explaining how it is built. As the app grows, new features should add their design decisions and explanations here.
 
+Contributor and coding-agent expectations are in [AGENTS.md](AGENTS.md): readable code, focused refactoring, domain rules, tests, logging, and secret handling. Keep these instructions in the repository so they remain available in fresh working sessions.
+
 ## Contents
 
 - [1. Install and run the app](#1-install-and-run-the-app)
@@ -19,6 +21,7 @@ A personal journal for morning weight and evening calories burned, built with .N
 - [VPS deployment tutorial](docs/vps.md)
 - [Accounts, friends, challenges, and upgrade guide](docs/social.md)
 - [Daily activities, XP, levels, and admin guide](docs/motivation.md)
+- [Knowledge base: SQLite, concurrency, WAL, and storage decisions](knowledge-base.md)
 
 ## 1. Install and run the app
 
