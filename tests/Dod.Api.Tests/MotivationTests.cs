@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Dod.Api.Entries;
 using Dod.Api.Motivation;
+using Dod.Api.Notifications;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
@@ -130,9 +131,13 @@ public sealed class MotivationTests : IDisposable
         clock.Now = clock.Now.AddDays(1);
         (await Report(user, "no-late-food", true)).EnsureSuccessStatusCode(); Assert.Equal(35, await Total(user));
         (await owner.PutAsJsonAsync("/api/admin/activities/no-late-food", edited with { IsActive = false })).EnsureSuccessStatusCode();
-        Assert.Equal(HttpStatusCode.BadRequest, (await Report(other, "no-late-food", true)).StatusCode);
+        (await Report(other, "no-late-food", true)).EnsureSuccessStatusCode();
         (await Report(user, "no-late-food", false)).EnsureSuccessStatusCode(); Assert.Equal(10, await Total(user));
-        Assert.DoesNotContain((await other.GetFromJsonAsync<MotivationDay>($"/api/motivation/{Today}"))!.Activities, a => a.Id == "no-late-food");
+        Assert.Contains((await other.GetFromJsonAsync<MotivationDay>($"/api/motivation/{Today}"))!.Activities, a => a.Id == "no-late-food");
+        clock.Now = new DateTimeOffset(WeeklyRules.NextMonday(DateOnly.FromDateTime(clock.Now.UtcDateTime)).ToDateTime(new TimeOnly(12, 0)), TimeSpan.Zero);
+        using var renewed = await Login(app, "Bobby", existing: true);
+        Assert.Equal(HttpStatusCode.BadRequest, (await Report(renewed, "no-late-food", true)).StatusCode);
+        Assert.DoesNotContain((await renewed.GetFromJsonAsync<MotivationDay>($"/api/motivation/{Today}"))!.Activities, a => a.Id == "no-late-food");
     }
 
     [Fact]

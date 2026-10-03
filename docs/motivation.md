@@ -31,6 +31,8 @@ Levels currently recognize progress only. No feature is locked or unlocked yet, 
 
 A correction updates the saved result rather than adding another event. Changing **Goal met** to **Not this day** removes that day's XP and can lower your level. Changing it back restores the original amount, without increasing the maximum reward for that date. The popup describes negative adjustments separately.
 
+A full Monday–Sunday (UTC) week with every weekly goal completed earns **50 bonus XP**, independently of email opt-in. The first eligible week starts on the Monday after registration or upgrade. Corrections to closed weeks can add or remove that bonus. See [weekly rules and email summaries](weekly-emails.md).
+
 ## Admin panel
 
 The original journal owner (the account with internal ID `legacy`, claimed using the original tracker secret) is the administrator. Existing owner sessions gain the Admin tab when the account is reloaded after deployment. Registering another account, changing a nickname, or sending an `isAdmin` field cannot grant this role. An unclaimed reserved owner has no session and cannot administer the app until properly claimed.
@@ -42,7 +44,7 @@ Select **Admin** to:
 3. Add activity types with a name, goal description, 1–1000 XP, optional cutoff time, and active status.
 4. Edit or retire existing types, including changing the automatic weigh-in reward from its initial 10 XP.
 
-Only one automatic weight activity exists; newly created types are manual reports. Retiring an activity stops new manual reports. Existing reports remain visible and can be corrected. A weight saved while its automatic activity is retired receives zero XP for that date; re-enabling the activity does not award points again for that already-recorded date.
+Only one automatic weight activity exists; newly created types are manual reports. Retiring an activity removes it from the next Monday's weekly roster. It remains reportable in weeks where it was a weekly goal; existing reports remain visible and can be corrected. A weight saved while its automatic activity is retired receives zero XP for that date; re-enabling the activity does not award points again for that already-recorded date.
 
 For each first report, the server snapshots its name, description, cutoff time, and reward. Later admin edits affect newly recorded reports, not existing ones. Even a first **Not this day** report locks in that day's rule so later corrections remain consistent. This avoids silently rewriting past goals or changing earned XP across the app.
 
@@ -52,9 +54,9 @@ Admin lists intentionally do not include passwords, password hashes, raw journal
 
 Migration **5** adds `Users.IsAdmin`, `Activities`, and `ActivityReports`, without changing or deleting journal data, challenges, or friendships. Existing weights are marked as already recorded with zero XP: there is no retroactive reward. The original owner retains their current nickname and password; no second claim is necessary.
 
-`ActivityReports` has a unique `(UserId, ActivityId, Date)` key. XP is the sum of completed reports' stored point values. Weigh-in storage and its reward happen in one SQLite transaction. Manual updates also use a transaction so reported XP changes correspond to the saved result. The client cannot choose reward amounts or XP totals.
+`ActivityReports` has a unique `(UserId, ActivityId, Date)` key. XP is the sum of completed reports' stored point values plus weekly bonuses. Weigh-in storage and its reward happen in one SQLite transaction. Manual updates also use a transaction so reported XP changes correspond to the saved result. The client cannot choose reward amounts or XP totals.
 
-Keep the deployment's pre-update backup. Older binaries reject a schema-5 database; rolling back to an older schema requires an intentional backup restore. No VPS Compose or secret changes are needed for this feature. Commit all new files as well as modified files, then push to run CI and deployment.
+Migration **6** adds weekly eligibility, activity schedules, awards, email preferences and the persistent outbox. Keep the deployment's pre-update backup: older binaries reject schema 6, and rollback requires restoring the compatible database and keys. Optional SMTP settings and production verification are documented in [weekly email setup](weekly-emails.md).
 
 ## API
 
@@ -63,6 +65,7 @@ All routes require a signed-in session. Mutations also require the existing anti
 | Route | Purpose |
 | --- | --- |
 | `GET /api/motivation/experience` | Current user's authoritative XP and level |
+| `GET /api/motivation/weekly/{date}` | Current user's weekly recap and bonus (date is normalized to Monday) |
 | `GET /api/motivation/{date}` | Daily goals, saved answers, reward values, and XP |
 | `PUT /api/motivation/{date}/activities/{id}` | Report `{ "completed": true/false }` for a manual activity |
 | `GET /api/admin/users` | Admin-only user list and experience |

@@ -1,3 +1,5 @@
+import { consumeEmailLink } from "./social/emailLink";
+import { EmailSettings, EmailLinkAction } from "./social/EmailSettings";
 import { Brand } from "./Brand";
 import { ExperienceBar, DailyActivities } from "./motivation/Motivation";
 import { Admin } from "./motivation/Admin";
@@ -110,7 +112,12 @@ function App({
       )}
       {tab === "admin" && user.isAdmin && <Admin />}
       {tab === "social" && <Social />}
-      {tab === "profile" && <Profile user={user} refresh={refreshAccount} />}
+      {tab === "profile" && (
+        <>
+          <Profile user={user} refresh={refreshAccount} />
+          <EmailSettings />
+        </>
+      )}
       <div hidden={tab !== "journal"}>
         <section className="intro">
           <p className="eyebrow">YOUR DAILY CHECK-IN</p>
@@ -358,17 +365,22 @@ function EntryForm({
     </form>
   );
 }
+const emailAction = consumeEmailLink(window.location, window.history);
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <AccountGate>
-      {(user, refresh, logout) => (
-        <App
-          key={user.id}
-          user={user}
-          refreshAccount={refresh}
-          logout={logout}
-        />
-      )}
-    </AccountGate>
+    {emailAction ? (
+      <EmailLinkAction {...emailAction} />
+    ) : (
+      <AccountGate>
+        {(user, refresh, logout) => (
+          <App
+            key={user.id}
+            user={user}
+            refreshAccount={refresh}
+            logout={logout}
+          />
+        )}
+      </AccountGate>
+    )}
   </StrictMode>,
 );

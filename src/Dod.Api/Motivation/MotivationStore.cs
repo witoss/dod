@@ -1,3 +1,4 @@
+using Dod.Api.Notifications;
 using System.Globalization;
 using Dod.Api.Entries;
 using Microsoft.Data.Sqlite;
@@ -28,11 +29,7 @@ public sealed class MotivationStore(EntryStore entries, TimeProvider clock)
         foreach (var (key, value) in values) cmd.Parameters.AddWithValue(key, value ?? DBNull.Value);
         return cmd;
     }
-    private async Task<long> Total(SqliteConnection db, SqliteTransaction? transaction)
-    {
-        using var cmd = Command(db, transaction, "SELECT COALESCE(SUM(Completed*Points),0) FROM ActivityReports WHERE UserId=$user", ("$user", entries.UserId));
-        return Convert.ToInt64(await cmd.ExecuteScalarAsync());
-    }
+    private Task<long> Total(SqliteConnection db, SqliteTransaction? transaction) => WeeklyRules.Total(db, transaction, entries.UserId);
     public async Task<Experience> GetExperience()
     {
         await using var db = await entries.OpenAsync();
@@ -48,9 +45,11 @@ public sealed class MotivationStore(EntryStore entries, TimeProvider clock)
                 COALESCE(r.Points,a.Points),CASE WHEN r.UserId IS NULL THEN a.CutoffTime ELSE r.CutoffTime END,
                 a.IsActive,r.Completed,COALESCE(r.Completed*r.Points,0),a.AvailableFrom
             FROM Activities a LEFT JOIN ActivityReports r ON r.ActivityId=a.Id AND r.UserId=$user AND r.Date=$date
-            WHERE (a.IsActive=1 AND a.AvailableFrom<=$date) OR r.UserId IS NOT NULL
+            WHERE ((a.IsActive=1 OR EXISTS (SELECT 1 FROM WeeklyActivitySchedule s WHERE s.ActivityId=a.Id AND s.IsActive=1
+                AND s.EffectiveFrom=(SELECT MAX(t.EffectiveFrom) FROM WeeklyActivitySchedule t WHERE t.ActivityId=a.Id AND t.EffectiveFrom<=$week)))
+                AND a.AvailableFrom<=$date) OR r.UserId IS NOT NULL
             ORDER BY a.Kind DESC,a.Name,a.Id
-            """, ("$user", entries.UserId), ("$date", day));
+            """, ("$user", entries.UserId), ("$date", day), ("$week", WeeklyRules.Day(WeeklyRules.Monday(date))));
         var activities = new List<DailyActivity>();
         using (var rows = await cmd.ExecuteReaderAsync())
         {
@@ -74,10 +73,11 @@ public sealed class MotivationStore(EntryStore entries, TimeProvider clock)
             INSERT INTO ActivityReports (UserId,ActivityId,Date,Completed,Points,Name,Description,CutoffTime)
             SELECT $user,Id,$date,$completed,Points,Name,Description,CutoffTime FROM Activities a
             WHERE Id=$id AND Kind='manual' AND AvailableFrom<=$date
-                AND (IsActive=1 OR EXISTS (SELECT 1 FROM ActivityReports r WHERE r.UserId=$user AND r.ActivityId=a.Id AND r.Date=$date))
+                AND (IsActive=1 OR EXISTS (SELECT 1 FROM WeeklyActivitySchedule s WHERE s.ActivityId=a.Id AND s.IsActive=1 AND s.EffectiveFrom=(SELECT MAX(t.EffectiveFrom) FROM WeeklyActivitySchedule t WHERE t.ActivityId=a.Id AND t.EffectiveFrom<=$week)) OR EXISTS (SELECT 1 FROM ActivityReports r WHERE r.UserId=$user AND r.ActivityId=a.Id AND r.Date=$date))
             ON CONFLICT(UserId,ActivityId,Date) DO UPDATE SET Completed=excluded.Completed
-            """, ("$user", entries.UserId), ("$date", day), ("$id", activityId), ("$completed", completed ? 1 : 0));
+            """, ("$user", entries.UserId), ("$date", day), ("$id", activityId), ("$completed", completed ? 1 : 0), ("$week", WeeklyRules.Day(WeeklyRules.Monday(date))));
         if (await cmd.ExecuteNonQueryAsync() == 0) return null;
+        await WeeklyRules.Reconcile(db, tx, entries.UserId, date, DateOnly.ParseExact(Today, "yyyy-MM-dd"));
         var after = await Total(db, tx);
         tx.Commit();
         return new(after - before, Experience.From(after), after / 100 > before / 100);
@@ -97,6 +97,7 @@ public sealed class MotivationStore(EntryStore entries, TimeProvider clock)
             ON CONFLICT(UserId,ActivityId,Date) DO NOTHING;
             """, ("$user", entries.UserId), ("$date", day), ("$weight", weight), ("$today", Today));
         await cmd.ExecuteNonQueryAsync();
+        await WeeklyRules.Reconcile(db, tx, entries.UserId, date, DateOnly.ParseExact(Today, "yyyy-MM-dd"));
         var after = await Total(db, tx);
         tx.Commit();
         return new(after - before, Experience.From(after), after / 100 > before / 100);
@@ -119,20 +120,30 @@ public sealed class MotivationStore(EntryStore entries, TimeProvider clock)
     public async Task<bool> SaveDefinition(string? id, ActivityInput input)
     {
         await using var db = await entries.OpenAsync();
-        using var cmd = Command(db, null, id is null ? """
+        using var tx = db.BeginTransaction();
+        var activityId = id ?? Guid.NewGuid().ToString("N");
+        using var cmd = Command(db, tx, id is null ? """
             INSERT INTO Activities VALUES ($id,$name,$description,'manual',$points,$cutoff,$active,$today)
             """ : """
             UPDATE Activities SET Name=$name,Description=$description,Points=$points,
                 CutoffTime=CASE WHEN Kind='weight' THEN NULL ELSE $cutoff END,IsActive=$active WHERE Id=$id
-            """, ("$id", id ?? Guid.NewGuid().ToString("N")), ("$name", input.Name.Trim()), ("$description", input.Description.Trim()),
+            """, ("$id", activityId), ("$name", input.Name.Trim()), ("$description", input.Description.Trim()),
             ("$points", input.Points), ("$cutoff", string.IsNullOrEmpty(input.CutoffTime) ? null : input.CutoffTime), ("$active", input.IsActive ? 1 : 0), ("$today", Today));
-        return await cmd.ExecuteNonQueryAsync() == 1;
+        if (await cmd.ExecuteNonQueryAsync() != 1) return false;
+        using var schedule = Command(db, tx, """
+            INSERT INTO WeeklyActivitySchedule VALUES ($id,$week,$name,$active)
+            ON CONFLICT(ActivityId,EffectiveFrom) DO UPDATE SET Name=excluded.Name,IsActive=excluded.IsActive
+            """, ("$id", activityId), ("$week", WeeklyRules.Day(WeeklyRules.NextMonday(DateOnly.ParseExact(Today, "yyyy-MM-dd")))),
+            ("$name", input.Name.Trim()), ("$active", input.IsActive ? 1 : 0));
+        await schedule.ExecuteNonQueryAsync();
+        tx.Commit();
+        return true;
     }
     public async Task<List<AdminUser>> Users()
     {
         await using var db = await entries.OpenAsync();
         using var cmd = Command(db, null, """
-            SELECT u.Id,u.Nickname,u.IsAdmin,COALESCE(SUM(r.Completed*r.Points),0)
+            SELECT u.Id,u.Nickname,u.IsAdmin,COALESCE(SUM(r.Completed*r.Points),0) + (SELECT COALESCE(SUM(w.Points),0) FROM WeeklyAwards w WHERE w.UserId=u.Id)
             FROM Users u LEFT JOIN ActivityReports r ON r.UserId=u.Id
             WHERE u.PasswordHash IS NOT NULL GROUP BY u.Id ORDER BY u.NormalizedNickname
             """);

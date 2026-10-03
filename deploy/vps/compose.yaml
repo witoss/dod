@@ -4,6 +4,14 @@ services:
     image: ${APP_IMAGE:?Deploy a commit-tagged image with deploy.sh}
     environment:
       Tracker__Password: ${TRACKER_PASSWORD:?Set TRACKER_PASSWORD in .env}
+      Email__Enabled: ${EMAIL_ENABLED:-false}
+      Email__PublicUrl: ${EMAIL_PUBLIC_URL:-}
+      Email__Host: ${EMAIL_SMTP_HOST:-}
+      Email__Port: ${EMAIL_SMTP_PORT:-587}
+      Email__Security: ${EMAIL_SMTP_SECURITY:-StartTls}
+      Email__From: ${EMAIL_FROM:-}
+      Email__Username: ${EMAIL_SMTP_USERNAME:-}
+      Email__Password: ${EMAIL_SMTP_PASSWORD:-}
       ReverseProxy__KnownProxies__0: "172.30.47.3"
     networks:
       - proxy-link

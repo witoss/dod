@@ -12,7 +12,7 @@ This release replaces the shared Basic login with individual accounts. On startu
 
 The claim can succeed only once. Friends select **Create account** and get empty, private journals. They do not need the tracker password. Keep `TRACKER_PASSWORD` in the server configuration for compatibility with the deployment Compose file; after claiming, it cannot reset or reopen the owner's account.
 
-There is no email verification, password-reset flow, account deletion, or MFA in this release. Store account passwords in a password manager. Account recovery is a future feature, not a hidden use of the old tracker password.
+Optional weekly summaries now use a separate verified email address; see [weekly email setup](weekly-emails.md). Email verification does not verify account login or provide password recovery. There is no password-reset flow, account deletion, or MFA in this release. Store account passwords in a password manager. Account recovery is a future feature, not a hidden use of the old tracker password.
 
 ## Friendships
 

@@ -113,8 +113,10 @@ public static class AccountEndpoints
         await using var db = await store.OpenAsync(); using var cmd = db.CreateCommand();
         cmd.CommandText = claim
             ? "UPDATE Users SET Nickname=$nick, NormalizedNickname=$normal, PasswordHash=$hash WHERE Id=$id AND PasswordHash IS NULL"
-            : "INSERT INTO Users (Id, Nickname, NormalizedNickname, PasswordHash) VALUES ($id,$nick,$normal,$hash)";
+            : "INSERT INTO Users (Id, Nickname, NormalizedNickname, PasswordHash, WeeklyEligibleFrom) VALUES ($id,$nick,$normal,$hash,$eligible)";
         cmd.Parameters.AddWithValue("$id", id); cmd.Parameters.AddWithValue("$nick", input.Nickname); cmd.Parameters.AddWithValue("$normal", Normalize(input.Nickname)); cmd.Parameters.AddWithValue("$hash", hash);
+        var today = DateOnly.FromDateTime(ctx.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow().UtcDateTime);
+        cmd.Parameters.AddWithValue("$eligible", Dod.Api.Notifications.WeeklyRules.Day(Dod.Api.Notifications.WeeklyRules.NextMonday(today)));
         try { if (await cmd.ExecuteNonQueryAsync() == 0) return Error("The original journal has already been claimed.", 409); }
         catch (SqliteException e) when (e.SqliteErrorCode == 19) { return Error("That nickname is already taken.", 409); }
         await SignIn(ctx, id); return Results.NoContent();

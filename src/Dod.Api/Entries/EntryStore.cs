@@ -3,7 +3,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Dod.Api.Entries;
 
-public sealed class EntryStore(IConfiguration configuration, IHttpContextAccessor context)
+public sealed class EntryStore(IConfiguration configuration, IHttpContextAccessor context, TimeProvider clock)
 {
     private readonly string connectionString = new SqliteConnectionStringBuilder
     {
@@ -23,7 +23,7 @@ public sealed class EntryStore(IConfiguration configuration, IHttpContextAccesso
         command.Transaction = transaction;
         command.CommandText = "PRAGMA user_version";
         var version = Convert.ToInt32(await command.ExecuteScalarAsync());
-        if (version > 5)
+        if (version > 6)
             throw new InvalidOperationException("The database was created by a newer version of DOD.");
 
         // Version 1 originally had no user_version. Adopt it without replacing any entries.
@@ -98,6 +98,7 @@ public sealed class EntryStore(IConfiguration configuration, IHttpContextAccesso
         }
         if (version < 5)
         {
+            command.Parameters.AddWithValue("$today", Dod.Api.Notifications.WeeklyRules.Day(DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime)));
             command.CommandText = """
                 ALTER TABLE Users ADD COLUMN IsAdmin INTEGER NOT NULL DEFAULT 0 CHECK (IsAdmin IN (0,1));
                 UPDATE Users SET IsAdmin=1 WHERE Id='legacy';
@@ -113,9 +114,9 @@ public sealed class EntryStore(IConfiguration configuration, IHttpContextAccesso
                 );
                 CREATE UNIQUE INDEX SingleWeightActivity ON Activities(Kind) WHERE Kind='weight';
                 INSERT INTO Activities VALUES
-                    ('weight','Weigh yourself','Save your weight in your journal. Points are awarded automatically once per date.','weight',10,NULL,1,date('now')),
-                    ('no-sweets','No sweets','Did you avoid sweets for this whole day?','manual',10,NULL,1,date('now')),
-                    ('no-late-food','No food after cutoff','Did you avoid eating after the cutoff time for this day?','manual',10,'20:00',1,date('now'));
+                    ('weight','Weigh yourself','Save your weight in your journal. Points are awarded automatically once per date.','weight',10,NULL,1,$today),
+                    ('no-sweets','No sweets','Did you avoid sweets for this whole day?','manual',10,NULL,1,$today),
+                    ('no-late-food','No food after cutoff','Did you avoid eating after the cutoff time for this day?','manual',10,'20:00',1,$today);
                 CREATE TABLE ActivityReports (
                     UserId TEXT NOT NULL REFERENCES Users(Id),
                     ActivityId TEXT NOT NULL REFERENCES Activities(Id),
@@ -133,6 +134,42 @@ public sealed class EntryStore(IConfiguration configuration, IHttpContextAccesso
                         'Recorded before the XP system was introduced.',NULL
                     FROM Entries WHERE WeightKg IS NOT NULL;
                 PRAGMA user_version=5;
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+        if (version < 6)
+        {
+            var today = DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
+            command.Parameters.AddWithValue("$eligible", Dod.Api.Notifications.WeeklyRules.Day(Dod.Api.Notifications.WeeklyRules.NextMonday(today)));
+            command.Parameters.AddWithValue("$monday", Dod.Api.Notifications.WeeklyRules.Day(Dod.Api.Notifications.WeeklyRules.Monday(today)));
+            command.CommandText = """
+                ALTER TABLE Users ADD COLUMN WeeklyEligibleFrom TEXT NOT NULL DEFAULT '';
+                UPDATE Users SET WeeklyEligibleFrom=$eligible;
+                CREATE TABLE WeeklyActivitySchedule (
+                    ActivityId TEXT NOT NULL REFERENCES Activities(Id), EffectiveFrom TEXT NOT NULL,
+                    Name TEXT NOT NULL, IsActive INTEGER NOT NULL CHECK(IsActive IN (0,1)),
+                    PRIMARY KEY(ActivityId,EffectiveFrom)
+                );
+                INSERT INTO WeeklyActivitySchedule SELECT Id,$monday,Name,IsActive FROM Activities;
+                CREATE TABLE WeeklyAwards (
+                    UserId TEXT NOT NULL REFERENCES Users(Id), WeekStart TEXT NOT NULL,
+                    Points INTEGER NOT NULL CHECK(Points IN (0,50)), PRIMARY KEY(UserId,WeekStart)
+                );
+                CREATE TABLE EmailPreferences (
+                    UserId TEXT PRIMARY KEY REFERENCES Users(Id), Email TEXT NOT NULL,
+                    Enabled INTEGER NOT NULL DEFAULT 0, Verified INTEGER NOT NULL DEFAULT 0,
+                    Revision TEXT NOT NULL, TokenHash TEXT NULL, TokenExpires INTEGER NULL,
+                    LastVerification INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE TABLE EmailOutbox (
+                    Id TEXT PRIMARY KEY, UserId TEXT NOT NULL REFERENCES Users(Id), Revision TEXT NOT NULL,
+                    Kind TEXT NOT NULL, WeekStart TEXT NULL, Payload TEXT NOT NULL,
+                    State TEXT NOT NULL DEFAULT 'pending', Attempts INTEGER NOT NULL DEFAULT 0,
+                    NextAttempt INTEGER NOT NULL, LeaseUntil INTEGER NULL, SentAt INTEGER NULL
+                );
+                CREATE UNIQUE INDEX OneWeeklyEmail ON EmailOutbox(UserId,WeekStart) WHERE Kind='weekly';
+                CREATE INDEX PendingEmails ON EmailOutbox(State,NextAttempt);
+                PRAGMA user_version=6;
                 """;
             await command.ExecuteNonQueryAsync();
         }

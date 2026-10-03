@@ -717,7 +717,27 @@ Keep the server's OS security updates and backups maintained alongside the app. 
 
 Source: [Docker's official Ubuntu installation instructions](https://docs.docker.com/engine/install/ubuntu/). For an older server that already has Docker or another container runtime installed, review that guide's conflicting-package prerequisites before using the fresh-server steps above.
 
+## Weekly email summaries
+
+Profile settings let each user save a private email address, opt in, and confirm ownership before receiving Monday summaries. Recaps include weight change, a daily goal grid, activity and bonus XP, and challenge standings. Completing all weekly goals earns 50 bonus XP, independently of email settings.
+
+See [weekly email behavior, SMTP configuration, and production verification](docs/weekly-emails.md). Delivery defaults to disabled. This feature has not been deployed; production SMTP delivery still needs an operator smoke test.
+
 ## 12. Future ideas
+
+### Skip CI/CD for documentation-only changes — planned
+
+Configure GitHub Actions to skip automatic tests, image builds, and deployment when only the root `README.md` changes. Consider also excluding `docs/**`. Changes that include application code must still run CI/CD, and manual workflow runs should remain available.
+
+Use `paths-ignore` on the CI workflow's `push` and `pull_request` triggers where appropriate. If CI is a required pull-request check, use job-level change filtering with a check that still reports success for documentation-only changes, so merging is not blocked by a pending check. Keep deployment conditional on a successfully tested and published image.
+
+Before implementing, account for a documentation-only commit arriving while an earlier code commit is building: the deployment workflow's current latest-commit guard must not accidentally prevent that code release from deploying. Verify documentation-only changes, mixed code/documentation changes, and this overlapping-commit case. This improvement is not implemented yet.
+
+### Product analytics and application monitoring — planned
+
+Understand which features people use, how often they return, and where they abandon a flow. Add operational dashboards for availability, errors, response times, and server resources, with logs and traces to investigate problems. This is a future requirement; no tracking or monitoring services have been added for it.
+
+See [the analytics and observability plan](docs/analytics-and-observability.md) for proposed events, dashboards, privacy boundaries, tool options, and a gradual implementation path.
 
 ### Shared weight-progress chart
 
