@@ -1,0 +1,141 @@
+.experience-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 24px 0 12px;
+  padding: 20px 24px;
+  border: 1px solid #cbdacb;
+  border-radius: 16px;
+  background: #edf3e8;
+}
+.experience-bar h2 {
+  margin: 8px 0 0;
+}
+.experience-bar h2 span {
+  font-size: 17px;
+  font-weight: 400;
+}
+.experience-progress {
+  width: min(100%, 320px);
+}
+.experience-progress label,
+.experience-progress small {
+  display: block;
+  font-size: 12px;
+}
+.experience-progress progress {
+  width: 100%;
+  height: 10px;
+  accent-color: #2e7050;
+  margin: 8px 0;
+}
+.xp-toast {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 100;
+  max-width: min(400px, calc(100vw - 40px));
+  padding: 18px;
+  border-radius: 12px;
+  color: white;
+  background: #20533f;
+  box-shadow: 0 8px 30px #193a3430;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.xp-toast button {
+  background: transparent;
+  border: 1px solid #ffffff80;
+  color: white;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 20px;
+}
+.activity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+  gap: 16px;
+  margin: 20px 0;
+}
+.activity-card {
+  padding: 20px;
+  border: 1px solid #d8dfd5;
+  border-radius: 12px;
+}
+.activity-heading {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.activity-heading h3 {
+  margin-top: 0;
+  overflow-wrap: anywhere;
+}
+.xp-pill {
+  border-radius: 20px;
+  padding: 5px 9px;
+  background: #edf3e8;
+  white-space: nowrap;
+  font-weight: 700;
+  font-size: 12px;
+}
+.activity-card p {
+  font-size: 14px;
+  line-height: 1.6;
+}
+.activity-state {
+  font-weight: 600;
+}
+.activity-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.activity-actions button[aria-pressed="false"] {
+  background: white;
+  color: #193a34;
+  border: 1px solid #bac9bd;
+}
+.activity-editor {
+  margin-top: 24px;
+  border-top: 1px solid #d8dfd5;
+  padding-top: 12px;
+}
+.activity-editor textarea {
+  display: block;
+  width: 100%;
+  max-width: 460px;
+  min-height: 90px;
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid #bac9bd;
+  border-radius: 8px;
+  font: inherit;
+}
+.activity-editor .checkbox-label {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.activity-editor .checkbox-label input {
+  width: auto;
+  margin: 0;
+}
+.admin-panel > .history-heading {
+  flex-wrap: wrap;
+}
+@media (max-width: 600px) {
+  .experience-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+    padding: 18px;
+  }
+  .daily-activities .history-heading {
+    flex-wrap: wrap;
+  }
+}
