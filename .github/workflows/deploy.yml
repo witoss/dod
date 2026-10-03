@@ -56,7 +56,7 @@ jobs:
           echo 'deploy=true' >> "$GITHUB_OUTPUT"
       - name: Check out the tested release configuration
         if: steps.release.outputs.deploy == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ env.IMAGE_SHA }}
           persist-credentials: false
