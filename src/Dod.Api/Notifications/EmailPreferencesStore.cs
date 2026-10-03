@@ -78,6 +78,33 @@ public sealed class EmailPreferencesStore(EntryStore entries, TimeProvider clock
             ("$hash", Hash(token)), ("$now", Now));
         return await cmd.ExecuteNonQueryAsync() == 1;
     }
+    public async Task<string?> SendTest(string user, WeeklySummaryStore summaries)
+    {
+        if (!transport.Available) return "Email sending is not configured.";
+        var week = Monday(DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime)).AddDays(-7);
+        var summary = await summaries.Build(user, week);
+        await using var db = await entries.OpenAsync(); using var tx = db.BeginTransaction();
+        string email, revision, nickname;
+        using (var cmd = Command(db, tx, """
+            SELECT p.Email,p.Revision,u.Nickname FROM EmailPreferences p JOIN Users u ON u.Id=p.UserId
+            WHERE p.UserId=$user AND p.Verified=1
+            """, ("$user", user)))
+        using (var rows = await cmd.ExecuteReaderAsync())
+        {
+            if (!await rows.ReadAsync()) return "Confirm your saved email address before sending a test summary.";
+            email = rows.GetString(0); revision = rows.GetString(1); nickname = rows.GetString(2);
+        }
+        using (var cmd = Command(db, tx, """
+            SELECT COUNT(*) FROM EmailOutbox WHERE UserId=$user AND Kind='test'
+            AND (State IN ('pending','sending') OR SentAt>$recent)
+            """, ("$user", user), ("$recent", Now - 60)))
+            if (Convert.ToInt32(await cmd.ExecuteScalarAsync()) > 0)
+                return "A test summary is already queued, or was just sent. Please wait before trying again.";
+        var message = EmailTemplates.Weekly(email, nickname, summary, PublicUrl, UnsubscribeUrl(user, revision));
+        message = message with { Subject = $"[Test] {message.Subject}" };
+        await Enqueue(db, tx, user, revision, "test", Day(week), message);
+        tx.Commit(); return null;
+    }
     public string UnsubscribeUrl(string user, string revision) => $"{PublicUrl}/#unsubscribe={Uri.EscapeDataString(unsubscribeProtector.Protect(JsonSerializer.Serialize(new[] { user, revision })))}";
     public async Task<bool> Unsubscribe(string? token)
     {

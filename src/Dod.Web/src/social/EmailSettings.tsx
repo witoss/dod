@@ -64,6 +64,19 @@ export function EmailSettings() {
       setBusy(false);
     }
   }
+  async function sendTestSummary() {
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      await api("/api/email/test-summary", "POST");
+      setMessage("Test summary queued. Check your inbox and spam folder in about a minute.");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <section className="social-panel">
@@ -124,6 +137,16 @@ export function EmailSettings() {
               Resend confirmation
             </button>
           )}
+          <p className="hint">
+            Send yourself a test recap for the last completed week. Confirm your
+            saved address first; weekly emails can remain off.
+          </p>
+          <button
+            disabled={busy || !preferences.verified || !preferences.sendingAvailable}
+            onClick={() => void sendTestSummary()}
+          >
+            Send test summary
+          </button>
           <p className="hint">
             Your email address is private. Turn summaries off here or use the
             unsubscribe link in any weekly email.

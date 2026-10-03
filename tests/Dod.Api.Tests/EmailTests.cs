@@ -136,6 +136,51 @@ public sealed class EmailTests : IDisposable
         using var cmd = db.CreateCommand(); cmd.CommandText = sql; return Convert.ToInt64(await cmd.ExecuteScalarAsync());
     }
     [Fact]
+    public async Task TestSummaryRequiresSessionCsrfVerifiedAddressAndConfiguredDelivery()
+    {
+        using var app = App(); using var anon = app.CreateClient();
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anon.PostAsync("/api/email/test-summary", null)).StatusCode);
+        using var user = await Register(app);
+        user.DefaultRequestHeaders.Remove("X-CSRF-TOKEN");
+        Assert.Equal(HttpStatusCode.BadRequest, (await user.PostAsync("/api/email/test-summary", null)).StatusCode);
+        await Csrf(user); await Save(user);
+        Assert.Equal(HttpStatusCode.BadRequest, (await user.PostAsync("/api/email/test-summary", null)).StatusCode);
+        Assert.Equal(0, await Count(app, "SELECT COUNT(*) FROM EmailOutbox WHERE Kind='test'"));
+        transport.Available = false;
+        Assert.Equal(HttpStatusCode.BadRequest, (await user.PostAsync("/api/email/test-summary", null)).StatusCode);
+    }
+    [Fact]
+    public async Task TestSummaryGoesToOwnAddressWithoutOptInAndDoesNotConsumeWeeklySlot()
+    {
+        using var app = App(); using var user = await Register(app); await Confirm(app, user);
+        await Save(user, enabled: false);
+        (await user.PostAsync("/api/email/test-summary", null)).EnsureSuccessStatusCode();
+        Assert.Equal(HttpStatusCode.BadRequest, (await user.PostAsync("/api/email/test-summary", null)).StatusCode);
+        Assert.Equal(1, await Count(app, "SELECT COUNT(*) FROM EmailOutbox WHERE Kind='test'"));
+        Assert.True(await app.Services.GetRequiredService<EmailQueue>().ProcessOne());
+        var message = transport.Sent.Last().Message;
+        Assert.Equal("alice@example.com", message.To);
+        Assert.StartsWith("[Test]", message.Subject);
+        Assert.Contains(clock.Week.AddDays(-14).ToString("yyyy-MM-dd"), message.Subject);
+        Assert.Contains("Stop weekly emails", message.Text);
+        Assert.Equal(0, await Count(app, "SELECT COUNT(*) FROM EmailOutbox WHERE Kind='weekly'"));
+        Assert.Equal(HttpStatusCode.BadRequest, (await user.PostAsync("/api/email/test-summary", null)).StatusCode);
+        clock.Now = clock.Now.AddSeconds(61);
+        (await user.PostAsync("/api/email/test-summary", null)).EnsureSuccessStatusCode();
+        Assert.True(await app.Services.GetRequiredService<EmailQueue>().ProcessOne());
+    }
+    [Fact]
+    public async Task TestSummaryIsCancelledWhenSavedAddressChangesBeforeDelivery()
+    {
+        using var app = App(); using var user = await Register(app); await Confirm(app, user);
+        (await user.PostAsync("/api/email/test-summary", null)).EnsureSuccessStatusCode();
+        clock.Now = clock.Now.AddMinutes(2);
+        await Save(user, "new@example.com");
+        await app.Services.GetRequiredService<EmailQueue>().ProcessOne();
+        Assert.Equal(1, await Count(app, "SELECT COUNT(*) FROM EmailOutbox WHERE Kind='test' AND State='cancelled' AND Payload=''"));
+        Assert.DoesNotContain(transport.Sent, sent => sent.Message.Subject.StartsWith("[Test]"));
+    }
+    [Fact]
     public async Task PreferencesRequireSessionAndCsrfAndVerificationTokensAreSingleUse()
     {
         using var app = App(); using var user = await Register(app); using var anon = app.CreateClient();

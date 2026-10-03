@@ -721,6 +721,8 @@ Source: [Docker's official Ubuntu installation instructions](https://docs.docker
 
 Profile settings let each user save a private email address, opt in, and confirm ownership before receiving Monday summaries. Recaps include weight change, a daily goal grid, activity and bonus XP, and challenge standings. Completing all weekly goals earns 50 bonus XP, independently of email settings.
 
+Use **Send test summary** in Profile to email yourself the last completed week's recap after confirming your saved address. It works with weekly emails turned off and does not replace the scheduled Monday recap.
+
 See [weekly email behavior, Cloudflare HTTPS/SMTP configuration, and production verification](docs/weekly-emails.md). Delivery defaults to disabled. On the Hetzner VPS, use `EMAIL_PROVIDER=Cloudflare` to send over HTTPS rather than blocked SMTP port 465. The HTTPS transport still needs deployment and an operator delivery smoke test; setup instructions include the required Account ID and API token settings.
 
 ## 12. Future ideas

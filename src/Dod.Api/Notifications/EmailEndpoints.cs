@@ -22,6 +22,11 @@ public static class EmailEndpoints
         }).RequireAuthorization();
         group.MapPost("/verify", async (TokenInput input, EmailPreferencesStore store) =>
             await store.Verify(input.Token) ? Results.NoContent() : AccountEndpoints.Error("This confirmation link is invalid, expired, or already used. Request a new one in your profile."));
+        group.MapPost("/test-summary", async (EmailPreferencesStore store, WeeklySummaryStore summaries, EntryStore entries) =>
+        {
+            var error = await store.SendTest(entries.UserId, summaries);
+            return error is null ? Results.NoContent() : AccountEndpoints.Error(error);
+        }).RequireAuthorization();
         group.MapPost("/unsubscribe", async (TokenInput input, EmailPreferencesStore store) =>
             await store.Unsubscribe(input.Token) ? Results.NoContent() : AccountEndpoints.Error("This unsubscribe link is invalid or belongs to an older email address."));
         app.MapGet("/api/motivation/weekly/{date}", async (DateOnly date, WeeklySummaryStore store, EntryStore entries) =>

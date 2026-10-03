@@ -4,6 +4,8 @@ In Profile, save your email address and choose **Send me weekly summaries**. A c
 
 Turn summaries off in Profile or open **Stop weekly emails** in a recap and press **Unsubscribe**. Link visits alone do not change preferences. The address is private and is never included in social or admin account responses. Email confirmation is separate from nickname/password login; it does not provide password recovery.
 
+In Profile, **Send test summary** queues a recap of the last completed Monday–Sunday to your own confirmed address. Weekly opt-in is not required. The subject starts with `[Test]`; this does not consume the scheduled weekly recap slot. Allow about a minute for the worker to submit it. Only one test can be pending/in flight, and successful sends have a one-minute cooldown. Test sends use the same retry queue; changing the saved address before delivery cancels the old test.
+
 ## Week boundaries and XP
 
 Weeks run Monday through Sunday in UTC. Existing accounts become eligible on the Monday after the database upgrade; newly registered accounts become eligible on the Monday after registration. There are no bonuses for earlier weeks or partial onboarding weeks.
@@ -25,6 +27,7 @@ All mutations use the existing antiforgery token. Preference routes require a si
 | `GET /api/email/preferences` | Own email, enabled/verified flags and sending availability |
 | `PUT /api/email/preferences` | Save `{ "email": "you@example.com", "enabled": true }` |
 | `POST /api/email/resend` | Queue confirmation for the saved address |
+| `POST /api/email/test-summary` | Queue last completed week's test recap to own confirmed address; session and CSRF required |
 | `POST /api/email/verify` | Confirm `{ "token": "…" }` |
 | `POST /api/email/unsubscribe` | Disable summaries using `{ "token": "…" }` |
 | `GET /api/motivation/weekly/{date}` | Own recap, normalizing date to Monday |
