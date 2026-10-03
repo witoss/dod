@@ -76,6 +76,10 @@ public sealed class EmailQueue(EntryStore entries, EmailPreferencesStore prefere
                     NOT EXISTS (SELECT 1 FROM EmailPreferences p WHERE p.UserId=EmailOutbox.UserId AND p.Revision=EmailOutbox.Revision
                         AND ((EmailOutbox.Kind='weekly' AND p.Enabled=1 AND p.Verified=1)
                             OR (EmailOutbox.Kind='test' AND p.Verified=1)
+                            OR (EmailOutbox.Kind='password-changed' AND p.Verified=1)
+                            OR (EmailOutbox.Kind='password-reset' AND p.Verified=1 AND EXISTS
+                                (SELECT 1 FROM PasswordResets r WHERE r.UserId=p.UserId AND r.EmailRevision=p.Revision
+                                    AND r.OutboxId=EmailOutbox.Id AND r.TokenHash IS NOT NULL AND r.Expires>$now))
                             OR (EmailOutbox.Kind='verification' AND p.Verified=0 AND p.TokenHash IS NOT NULL AND p.TokenExpires>$now)))
                     OR (Kind='weekly' AND WeekStart<$oldest));
                 """, ("$now", Now), ("$oldest", Day(Monday(DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime)).AddDays(-7))));
@@ -102,6 +106,10 @@ public sealed class EmailQueue(EntryStore entries, EmailPreferencesStore prefere
                 SELECT COUNT(*) FROM EmailOutbox o JOIN EmailPreferences p ON p.UserId=o.UserId AND p.Revision=o.Revision
                 WHERE o.Id=$id AND ((o.Kind='weekly' AND p.Enabled=1 AND p.Verified=1)
                     OR (o.Kind='test' AND p.Verified=1)
+                    OR (o.Kind='password-changed' AND p.Verified=1)
+                    OR (o.Kind='password-reset' AND p.Verified=1 AND EXISTS
+                        (SELECT 1 FROM PasswordResets r WHERE r.UserId=p.UserId AND r.EmailRevision=p.Revision
+                            AND r.OutboxId=o.Id AND r.TokenHash IS NOT NULL AND r.Expires>$now))
                     OR (o.Kind='verification' AND p.Verified=0 AND p.TokenHash IS NOT NULL AND p.TokenExpires>$now))
                 """, ("$id", id), ("$now", Now));
             if (Convert.ToInt32(await valid.ExecuteScalarAsync()) == 0) state = "cancelled";

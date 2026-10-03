@@ -60,7 +60,7 @@ Migration **5** adds `Users.IsAdmin`, `Activities`, and `ActivityReports`, witho
 
 `ActivityReports` has a unique `(UserId, ActivityId, Date)` key. XP is the sum of completed reports' stored point values plus weekly bonuses. Weigh-in storage and its reward happen in one SQLite transaction. Manual updates also use a transaction so reported XP changes correspond to the saved result. The client cannot choose reward amounts or XP totals.
 
-Migration **6** adds weekly eligibility, activity schedules, awards, email preferences and the persistent outbox. Keep the deployment's pre-update backup: older binaries reject schema 6, and rollback requires restoring the compatible database and keys. Optional SMTP settings and production verification are documented in [weekly email setup](weekly-emails.md).
+Migration **6** adds weekly eligibility, activity schedules, awards, email preferences and the persistent outbox. Keep the deployment's pre-update backup: older binaries reject newer schemas, and rollback requires restoring the compatible database and keys. Optional SMTP settings and production verification are documented in [weekly email setup](weekly-emails.md).
 
 ## API
 

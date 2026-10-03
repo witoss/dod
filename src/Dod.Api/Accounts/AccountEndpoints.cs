@@ -43,14 +43,30 @@ public static class AccountEndpoints
             if (!ValidNickname(input.Nickname) || input.Password is null || input.Password.Length > 128) return Error("Invalid nickname or password.", 401);
             await using var db = await store.OpenAsync();
             using var cmd = db.CreateCommand();
-            cmd.CommandText = "SELECT Id, PasswordHash FROM Users WHERE NormalizedNickname=$nick AND PasswordHash IS NOT NULL";
+            cmd.CommandText = "SELECT Id, PasswordHash, SessionVersion FROM Users WHERE NormalizedNickname=$nick AND PasswordHash IS NOT NULL";
             cmd.Parameters.AddWithValue("$nick", Normalize(input.Nickname));
             using var row = await cmd.ExecuteReaderAsync();
             if (!await row.ReadAsync()) return Error("Invalid nickname or password.", 401);
             var id = row.GetString(0);
             if (Hasher.VerifyHashedPassword(id, row.GetString(1), input.Password) == PasswordVerificationResult.Failed) return Error("Invalid nickname or password.", 401);
-            await SignIn(ctx, id);
+            await ctx.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, AccountSessions.Principal(id, row.GetInt32(2)),
+                new AuthenticationProperties { IsPersistent = true });
             return Results.NoContent();
+        }).RequireRateLimiting("accounts");
+        group.MapPost("/forgot-password", async (PasswordResetRequest input, PasswordResetStore resets, HttpContext ctx) =>
+        {
+            var started = System.Diagnostics.Stopwatch.GetTimestamp();
+            await resets.Request(input.Nickname);
+            // Queue delivery asynchronously and apply the same minimum response time to all account states.
+            var remaining = TimeSpan.FromMilliseconds(300) - System.Diagnostics.Stopwatch.GetElapsedTime(started);
+            if (remaining > TimeSpan.Zero) await Task.Delay(remaining, ctx.RequestAborted);
+            return Results.Ok(new { detail = PasswordResetStore.RequestMessage });
+        }).RequireRateLimiting("accounts");
+        group.MapPost("/reset-password", async (PasswordResetInput input, PasswordResetStore resets) =>
+        {
+            if (input.Password is null || input.Password.Length is < 12 or > 128) return Error("Choose a password with 12–128 characters.");
+            return await resets.Reset(input.Token, input.Password) ? Results.NoContent()
+                : Error("This password reset link is invalid, expired, or already used. Request a new one from the sign-in page.");
         }).RequireRateLimiting("accounts");
         group.MapPost("/logout", async (HttpContext ctx) => { await ctx.SignOutAsync(); return Results.NoContent(); }).RequireAuthorization();
         group.MapPut("/profile", async (ProfileInput input, EntryStore store) =>
@@ -123,6 +139,6 @@ public static class AccountEndpoints
         await SignIn(ctx, id); return Results.NoContent();
     }
     private static Task SignIn(HttpContext ctx, string id) => ctx.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme,
-        new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, id)], CookieAuthenticationDefaults.AuthenticationScheme)),
+        AccountSessions.Principal(id, 0),
         new AuthenticationProperties { IsPersistent = true });
 }

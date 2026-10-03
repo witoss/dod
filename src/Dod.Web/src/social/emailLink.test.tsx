@@ -11,6 +11,8 @@ describe("email confirmation and unsubscribe links", () => {
     ["#unsubscribe=protected%2Ftoken%3D", "unsubscribe", "protected/token="],
     ["#verify-email=%zz", "verify", ""],
     ["#unsubscribe=", "unsubscribe", ""],
+    ["#reset-password=reset_DEF-123", "reset", "reset_DEF-123"],
+    ["#reset-password=%zz", "reset", ""],
   ])("consumes %s and removes the bearer token from the address bar", (hash, action, token) => {
     const replaceState = vi.fn();
     expect(consumeEmailLink({ hash, pathname: "/", search: "?lang=en" }, { replaceState })).toEqual({ action, token });

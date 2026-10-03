@@ -53,6 +53,11 @@ public sealed class EmailPreferencesStore(EntryStore entries, TimeProvider clock
                 TokenExpires=CASE WHEN Revision<>excluded.Revision THEN NULL ELSE TokenExpires END
             """, ("$user", user), ("$email", email), ("$enabled", input.Enabled), ("$verified", verified), ("$revision", revision), ("$last", last)))
             await cmd.ExecuteNonQueryAsync();
+        if (changed)
+        {
+            using var invalidate = Command(db, tx, "DELETE FROM PasswordResets WHERE UserId=$user", ("$user", user));
+            await invalidate.ExecuteNonQueryAsync();
+        }
         if (changed || !input.Enabled)
         {
             using var cancel = Command(db, tx, "UPDATE EmailOutbox SET State='cancelled',Payload='' WHERE UserId=$user AND State='pending' AND (Revision<>$revision OR Kind='weekly')",

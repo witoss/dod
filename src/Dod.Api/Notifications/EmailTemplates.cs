@@ -6,6 +6,12 @@ namespace Dod.Api.Notifications;
 
 public static class EmailTemplates
 {
+    public static EmailMessage PasswordReset(string email, string url) => new(email, "Reset your dodo password",
+        Shell($"<h1>Reset your password</h1><p><a href=\"{E(url)}\">Choose a new password</a></p><p>This link expires in 30 minutes and works once. If you did not request this, ignore this email; your password has not changed.</p>"),
+        $"Reset your dodo password: {url}\nThis link expires in 30 minutes and works once. If you did not request it, ignore this email; your password has not changed.");
+    public static EmailMessage PasswordChanged(string email) => new(email, "Your dodo password was changed",
+        Shell("<h1>Password changed</h1><p>Your password was reset and existing sessions were signed out. If you did not do this, request another password reset from the sign-in page.</p>"),
+        "Your dodo password was reset and existing sessions were signed out. If you did not do this, request another password reset from the sign-in page.");
     private static string E(string value) => WebUtility.HtmlEncode(value);
     private static string Number(decimal value) => value.ToString("0.00", CultureInfo.InvariantCulture);
     private static string Shell(string body) => "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head>"

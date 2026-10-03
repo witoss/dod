@@ -24,7 +24,7 @@ public sealed class EntryStore(IConfiguration configuration, IHttpContextAccesso
         command.Transaction = transaction;
         command.CommandText = "PRAGMA user_version";
         var version = Convert.ToInt32(await command.ExecuteScalarAsync());
-        if (version > 6)
+        if (version > 7)
             throw new InvalidOperationException("The database was created by a newer version of DOD.");
 
         // Version 1 originally had no user_version. Adopt it without replacing any entries.
@@ -171,6 +171,19 @@ public sealed class EntryStore(IConfiguration configuration, IHttpContextAccesso
                 CREATE UNIQUE INDEX OneWeeklyEmail ON EmailOutbox(UserId,WeekStart) WHERE Kind='weekly';
                 CREATE INDEX PendingEmails ON EmailOutbox(State,NextAttempt);
                 PRAGMA user_version=6;
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+        if (version < 7)
+        {
+            command.CommandText = """
+                ALTER TABLE Users ADD COLUMN SessionVersion INTEGER NOT NULL DEFAULT 0;
+                CREATE TABLE PasswordResets (
+                    UserId TEXT PRIMARY KEY REFERENCES Users(Id), EmailRevision TEXT NOT NULL,
+                    TokenHash TEXT NULL UNIQUE, Expires INTEGER NOT NULL, LastRequested INTEGER NOT NULL,
+                    OutboxId TEXT NULL
+                );
+                PRAGMA user_version=7;
                 """;
             await command.ExecuteNonQueryAsync();
         }

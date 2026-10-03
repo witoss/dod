@@ -7,6 +7,11 @@ using System.Text.RegularExpressions;
 using Dod.Api.Entries;
 using Dod.Api.Motivation;
 using Dod.Api.Notifications;
+using Dod.Api.Accounts;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
@@ -135,6 +140,184 @@ public sealed class EmailTests : IDisposable
     {
         await using var db = await Open();
         using var cmd = db.CreateCommand(); cmd.CommandText = sql; return Convert.ToInt64(await cmd.ExecuteScalarAsync());
+    }
+    private static async Task<HttpResponseMessage> Forgot(HttpClient client, string nickname = "Alice") =>
+        await client.PostAsJsonAsync("/api/account/forgot-password", new { nickname });
+    private static async Task<HttpResponseMessage> Reset(HttpClient client, string token, string password = "new-password-456") =>
+        await client.PostAsJsonAsync("/api/account/reset-password", new { token, password });
+    private async Task<string> RequestReset(WebApplicationFactory<Program> app, HttpClient anon)
+    {
+        (await Forgot(anon)).EnsureSuccessStatusCode();
+        Assert.True(await app.Services.GetRequiredService<EmailQueue>().ProcessOne());
+        return Token(transport.Sent.Last().Message, "reset-password");
+    }
+    [Fact]
+    public async Task RecoveryRequestsHaveSameResponseForMissingUnverifiedAndVerifiedAccounts()
+    {
+        using var app = App(); using var user = await Register(app); using var anon = app.CreateClient(); await Csrf(anon);
+        var missing = await Forgot(anon, "Nobody"); missing.EnsureSuccessStatusCode();
+        var noEmail = await Forgot(anon); noEmail.EnsureSuccessStatusCode();
+        Assert.Equal(await missing.Content.ReadAsStringAsync(), await noEmail.Content.ReadAsStringAsync());
+        await Save(user);
+        var unverified = await Forgot(anon); unverified.EnsureSuccessStatusCode();
+        Assert.Equal(await missing.Content.ReadAsStringAsync(), await unverified.Content.ReadAsStringAsync());
+        Assert.Equal(0, await Count(app, "SELECT COUNT(*) FROM EmailOutbox WHERE Kind='password-reset'"));
+        Assert.True(await app.Services.GetRequiredService<EmailQueue>().ProcessOne());
+        (await anon.PostAsJsonAsync("/api/email/verify", new { token = Token(transport.Sent.Last().Message, "verify-email") })).EnsureSuccessStatusCode();
+        var eligible = await Forgot(anon, "aLiCe"); eligible.EnsureSuccessStatusCode();
+        Assert.Equal(await missing.Content.ReadAsStringAsync(), await eligible.Content.ReadAsStringAsync());
+        Assert.Equal(1, await Count(app, "SELECT COUNT(*) FROM EmailOutbox WHERE Kind='password-reset'"));
+        (await Forgot(anon)).EnsureSuccessStatusCode();
+        Assert.Equal(1, await Count(app, "SELECT COUNT(*) FROM EmailOutbox WHERE Kind='password-reset'"));
+    }
+    [Fact]
+    public async Task PasswordResetUsesVerifiedAddressWithoutOptInRevokesSessionsAndNotifiesOwner()
+    {
+        using var app = App(); using var user = await Register(app); using var other = await Register(app, "Bobby");
+        await Confirm(app, user); await Save(user, enabled: false);
+        using var anon = app.CreateClient(); await Csrf(anon);
+        var token = await RequestReset(app, anon);
+        Assert.Equal("alice@example.com", transport.Sent.Last().Message.To);
+        await using (var db = await Open())
+        {
+            using var cmd = db.CreateCommand(); cmd.CommandText = "SELECT TokenHash FROM PasswordResets";
+            var hash = (string)(await cmd.ExecuteScalarAsync())!;
+            Assert.Equal(64, hash.Length); Assert.NotEqual(token, hash);
+        }
+        (await Reset(anon, token)).EnsureSuccessStatusCode();
+        Assert.Equal(HttpStatusCode.BadRequest, (await Reset(anon, token)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await user.GetAsync("/api/account/me")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await user.GetAsync("/api/entries/")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await other.GetAsync("/api/account/me")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anon.PostAsJsonAsync("/api/account/login", new { nickname = "Alice", password = "test-password-123" })).StatusCode);
+        (await anon.PostAsJsonAsync("/api/account/login", new { nickname = "Alice", password = "new-password-456" })).EnsureSuccessStatusCode();
+        Assert.Equal(HttpStatusCode.OK, (await anon.GetAsync("/api/account/me")).StatusCode);
+        Assert.True(await app.Services.GetRequiredService<EmailQueue>().ProcessOne());
+        Assert.Equal("Your dodo password was changed", transport.Sent.Last().Message.Subject);
+        Assert.DoesNotContain("new-password-456", transport.Sent.Last().Message.Text);
+        Assert.DoesNotContain("new-password-456", transport.Sent.Last().Message.Html);
+        Assert.Equal(1, await Count(app, "SELECT SUM(SessionVersion) FROM Users"));
+        Assert.Equal(0, await Count(app, "SELECT COUNT(*) FROM PasswordResets WHERE TokenHash IS NOT NULL"));
+        Assert.All(logs.Messages, message =>
+        { Assert.DoesNotContain(token, message); Assert.DoesNotContain("new-password-456", message); Assert.DoesNotContain("alice@example.com", message); });
+    }
+    [Fact]
+    public async Task ExpiredResetCannotChangePasswordAndExpiredQueuedResetIsCancelled()
+    {
+        using var app = App(); using var user = await Register(app); await Confirm(app, user);
+        using var anon = app.CreateClient(); await Csrf(anon);
+        var token = await RequestReset(app, anon);
+        clock.Now = clock.Now.AddMinutes(30);
+        Assert.Equal(HttpStatusCode.BadRequest, (await Reset(anon, token)).StatusCode);
+        (await Forgot(anon)).EnsureSuccessStatusCode();
+        clock.Now = clock.Now.AddMinutes(31);
+        Assert.Equal(HttpStatusCode.BadRequest, (await Reset(anon, token)).StatusCode);
+        Assert.False(await app.Services.GetRequiredService<EmailQueue>().ProcessOne());
+        Assert.Equal(1, await Count(app, "SELECT COUNT(*) FROM EmailOutbox WHERE Kind='password-reset' AND State='cancelled'"));
+        Assert.Equal(0, await Count(app, "SELECT SUM(SessionVersion) FROM Users"));
+        Assert.Equal(HttpStatusCode.OK, (await user.GetAsync("/api/account/me")).StatusCode);
+    }
+    [Fact]
+    public async Task NewResetLinkInvalidatesOldOneAndConcurrentConsumptionWorksOnce()
+    {
+        using var app = App(); using var user = await Register(app); await Confirm(app, user);
+        using var anon = app.CreateClient(); await Csrf(anon);
+        var old = await RequestReset(app, anon);
+        // Simulate an old send whose lease must be reclaimed after a newer request supersedes it.
+        await using (var db = await Open())
+        {
+            using var cmd = db.CreateCommand();
+            cmd.CommandText = "UPDATE EmailOutbox SET State='sending',LeaseUntil=0 WHERE Kind='password-reset'";
+            await cmd.ExecuteNonQueryAsync();
+        }
+        clock.Now = clock.Now.AddSeconds(61);
+        var current = await RequestReset(app, anon);
+        Assert.NotEqual(old, current);
+        Assert.Equal(1, await Count(app, "SELECT COUNT(*) FROM EmailOutbox WHERE Kind='password-reset' AND State='cancelled'"));
+        Assert.Equal(HttpStatusCode.BadRequest, (await Reset(anon, old)).StatusCode);
+        var results = await Task.WhenAll(Reset(anon, current), Reset(anon, current));
+        Assert.Single(results, response => response.StatusCode == HttpStatusCode.NoContent);
+        Assert.Single(results, response => response.StatusCode == HttpStatusCode.BadRequest);
+        Assert.Equal(1, await Count(app, "SELECT SUM(SessionVersion) FROM Users"));
+    }
+    [Fact]
+    public async Task ChangingSavedEmailInvalidatesRecoveryAndCancelsQueuedReset()
+    {
+        using var app = App(); using var user = await Register(app); await Confirm(app, user);
+        using var anon = app.CreateClient(); await Csrf(anon);
+        var token = await RequestReset(app, anon);
+        clock.Now = clock.Now.AddSeconds(61); (await Forgot(anon)).EnsureSuccessStatusCode();
+        await Save(user, "new@example.com");
+        Assert.Equal(HttpStatusCode.BadRequest, (await Reset(anon, token)).StatusCode);
+        (await Forgot(anon)).EnsureSuccessStatusCode();
+        Assert.Equal(2, await Count(app, "SELECT COUNT(*) FROM EmailOutbox WHERE Kind='password-reset'"));
+        Assert.Equal(1, await Count(app, "SELECT COUNT(*) FROM EmailOutbox WHERE Kind='password-reset' AND State='cancelled' AND Payload=''"));
+        Assert.Equal(0, await Count(app, "SELECT COUNT(*) FROM PasswordResets"));
+    }
+    [Fact]
+    public async Task RecoveryRequiresCsrfAndPasswordPolicyWithoutConsumingValidTokenOnError()
+    {
+        using var app = App(); using var user = await Register(app); await Confirm(app, user);
+        using var anon = app.CreateClient();
+        Assert.Equal(HttpStatusCode.BadRequest, (await Forgot(anon)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await Reset(anon, "invalid")).StatusCode);
+        await Csrf(anon);
+        var token = await RequestReset(app, anon);
+        Assert.Equal(HttpStatusCode.BadRequest, (await Reset(anon, token, "short")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await Reset(anon, token, new string('x', 129))).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await anon.PostAsJsonAsync("/api/email/verify", new { token })).StatusCode);
+        (await Reset(anon, token)).EnsureSuccessStatusCode();
+    }
+    [Fact]
+    public async Task RecoveryUnavailableReturnsGenericResponseWithoutQueuingMail()
+    {
+        using var app = App(); using var user = await Register(app); await Confirm(app, user);
+        transport.Available = false;
+        using var anon = app.CreateClient(); await Csrf(anon);
+        var response = await Forgot(anon); response.EnsureSuccessStatusCode();
+        Assert.Contains(PasswordResetStore.RequestMessage, await response.Content.ReadAsStringAsync());
+        Assert.Equal(0, await Count(app, "SELECT COUNT(*) FROM EmailOutbox WHERE Kind='password-reset'"));
+    }
+    [Fact]
+    public async Task CookiesWithoutSessionVersionRemainValidUntilPasswordReset()
+    {
+        using var app = App(); using var user = await Register(app); await Confirm(app, user);
+        var id = await User(user);
+        var options = app.Services.GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>().Get(CookieAuthenticationDefaults.AuthenticationScheme);
+        var ticket = new AuthenticationTicket(new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, id)], CookieAuthenticationDefaults.AuthenticationScheme)),
+            new AuthenticationProperties { IssuedUtc = clock.Now, ExpiresUtc = clock.Now.AddDays(7) }, CookieAuthenticationDefaults.AuthenticationScheme);
+        using var legacy = app.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
+        legacy.DefaultRequestHeaders.Add("Cookie", $"dod-session={options.TicketDataFormat.Protect(ticket)}");
+        Assert.Equal(HttpStatusCode.OK, (await legacy.GetAsync("/api/account/me")).StatusCode);
+        using var anon = app.CreateClient(); await Csrf(anon);
+        var token = await RequestReset(app, anon); (await Reset(anon, token)).EnsureSuccessStatusCode();
+        Assert.Equal(HttpStatusCode.Unauthorized, (await legacy.GetAsync("/api/account/me")).StatusCode);
+    }
+    [Fact]
+    public async Task VersionSixUpgradePreservesVerifiedEmailAndPasswordResetSurvivesRestart()
+    {
+        using (var original = App())
+        using (var user = await Register(original)) await Confirm(original, user);
+        // Model the pre-recovery schema while retaining existing account, email and key data.
+        await using (var db = await Open())
+        {
+            using var cmd = db.CreateCommand();
+            cmd.CommandText = "DROP TABLE PasswordResets; ALTER TABLE Users DROP COLUMN SessionVersion; PRAGMA user_version=6;";
+            await cmd.ExecuteNonQueryAsync();
+        }
+        string token;
+        using (var upgraded = App())
+        using (var user = await Register(upgraded, existing: true))
+        using (var anon = upgraded.CreateClient())
+        {
+            Assert.True((await user.GetFromJsonAsync<EmailPreferences>("/api/email/preferences"))!.Verified);
+            Assert.Equal(7, await Count(upgraded, "PRAGMA user_version"));
+            await Csrf(anon); token = await RequestReset(upgraded, anon);
+        }
+        using var restarted = App(); using var resetClient = restarted.CreateClient(); await Csrf(resetClient);
+        (await Reset(resetClient, token)).EnsureSuccessStatusCode();
+        (await resetClient.PostAsJsonAsync("/api/account/login", new { nickname = "Alice", password = "new-password-456" })).EnsureSuccessStatusCode();
     }
     [Fact]
     public async Task TestSummaryRequiresSessionCsrfVerifiedAddressAndConfiguredDelivery()
@@ -403,7 +586,8 @@ public sealed class EmailTests : IDisposable
             public bool IsEnabled(LogLevel logLevel) => true;
             public void Log<TState>(LogLevel level, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
             {
-                if (category == typeof(EmailQueue).FullName) messages.Add(formatter(state, exception) + exception?.Message);
+                if (category == typeof(EmailQueue).FullName || category == typeof(PasswordResetStore).FullName)
+                    messages.Add(formatter(state, exception) + exception?.Message);
             }
         }
     }

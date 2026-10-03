@@ -1,4 +1,5 @@
 import { Brand } from "../Brand";
+import { ForgotPasswordForm } from "./PasswordReset";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api, apiFetch, resetCsrf } from "../api";
 import "./social.css";
@@ -39,7 +40,7 @@ export function AccountGate({
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [mode, setMode] = useState<"login" | "register" | "claim">("login");
+  const [mode, setMode] = useState<"login" | "register" | "claim" | "forgot">("login");
   const [busy, setBusy] = useState(false);
   async function refresh() {
     resetCsrf();
@@ -97,6 +98,10 @@ export function AccountGate({
       </main>
     );
   if (user) return children(user, refresh, logout);
+  if (mode === "forgot") return <main className="account-page">
+    <Brand /><ForgotPasswordForm />
+    <button onClick={() => { setMode("login"); setError(""); }}>Back to sign in</button>
+  </main>;
   return (
     <main className="account-page">
       <Brand />
@@ -191,6 +196,7 @@ export function AccountGate({
                 : "Claim journal"}
         </button>
       </form>
+      {mode === "login" && <button className="link" onClick={() => { setMode("forgot"); setError(""); }}>Forgot password?</button>}
     </main>
   );
 }

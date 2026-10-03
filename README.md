@@ -719,6 +719,10 @@ Source: [Docker's official Ubuntu installation instructions](https://docs.docker
 
 ## Weekly email summaries
 
+Password recovery is available from **Forgot password?** on the sign-in page, only for accounts with a previously saved and confirmed email address. Links expire after 30 minutes and work once; successful reset revokes existing sessions. See [password recovery and migration 7 deployment checks](docs/password-reset.md).
+
+Frontend HTML (`/`, `/index.html`, and browser-route fallbacks) uses `Cache-Control: no-cache, max-age=0, must-revalidate`, so a normal refresh checks the deployed release. Content-hashed JavaScript/CSS use a one-year immutable cache; a new release changes their URLs when their contents change. An already-open tab updates on refresh. Verify the deployed HTML headers with `curl -I https://dodop.duckdns.org/` and check the Build identifier in the footer.
+
 Past-day goals are editable from the journal's **Weekly goals** grid. Select a day, tick or untick a goal, and daily XP and closed-week bonus XP update together. See [goal editing, XP rules and diagnostics](docs/motivation.md).
 
 Profile settings let each user save a private email address, opt in, and confirm ownership before receiving Monday summaries. Recaps include weight change, a daily goal grid, activity and bonus XP, and challenge standings. Completing all weekly goals earns 50 bonus XP, independently of email settings.

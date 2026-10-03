@@ -42,6 +42,7 @@ builder.Services.AddSingleton<IEmailTransport>(services =>
     };
 });
 builder.Services.AddSingleton<EmailPreferencesStore>();
+builder.Services.AddSingleton<PasswordResetStore>();
 builder.Services.AddSingleton<WeeklySummaryStore>();
 builder.Services.AddSingleton<EmailQueue>();
 builder.Services.AddHostedService<EmailWorker>();
@@ -59,6 +60,7 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
     options.SlidingExpiration = false;
     options.Events.OnRedirectToLogin = ctx => { ctx.Response.StatusCode = 401; return Task.CompletedTask; };
     options.Events.OnRedirectToAccessDenied = ctx => { ctx.Response.StatusCode = 403; return Task.CompletedTask; };
+    options.Events.OnValidatePrincipal = AccountSessions.Validate;
 });
 builder.Services.AddAuthorization();
 builder.Services.AddAntiforgery(options =>
@@ -79,7 +81,20 @@ app.UseExceptionHandler();
 app.UseForwardedHeaders();
 await app.Services.GetRequiredService<EntryStore>().InitializeAsync();
 app.UseDefaultFiles();
-app.UseStaticFiles();
+var frontendFiles = new StaticFileOptions
+{
+    OnPrepareResponse = context =>
+    {
+        // HTML points at this release's content-hashed assets. Revalidate it on every visit/refresh.
+        // Only Vite's versioned JS/CSS filenames are safe to retain across releases.
+        var versionedAsset = context.Context.Request.Path.StartsWithSegments("/assets")
+            && System.Text.RegularExpressions.Regex.IsMatch(context.File.Name, @"-[A-Za-z0-9_-]{8,}\.(js|css)$");
+        context.Context.Response.Headers.CacheControl = versionedAsset
+            ? "public, max-age=31536000, immutable"
+            : "no-cache, max-age=0, must-revalidate";
+    }
+};
+app.UseStaticFiles(frontendFiles);
 app.UseRouting();
 app.UseMiddleware<ApiRequestLoggingMiddleware>();
 app.UseAuthentication();
@@ -94,6 +109,6 @@ app.MapSocialEndpoints();
 app.MapMotivationEndpoints();
 app.MapEmailEndpoints();
 app.MapFallback("/api/{**path}", () => Results.NotFound());
-app.MapFallbackToFile("index.html");
+app.MapFallbackToFile("index.html", frontendFiles);
 app.Run();
 public partial class Program;

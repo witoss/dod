@@ -1,5 +1,6 @@
 import { consumeEmailLink } from "./social/emailLink";
 import { EmailSettings, EmailLinkAction } from "./social/EmailSettings";
+import { ResetPasswordPage } from "./social/PasswordReset";
 import { Brand } from "./Brand";
 import { ExperienceBar, DailyActivities } from "./motivation/Motivation";
 import { WeekGoals } from "./motivation/WeekGoals";
@@ -371,7 +372,7 @@ const emailAction = consumeEmailLink(window.location, window.history);
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     {emailAction ? (
-      <EmailLinkAction {...emailAction} />
+      emailAction.action === "reset" ? <ResetPasswordPage token={emailAction.token} /> : <EmailLinkAction action={emailAction.action} token={emailAction.token} />
     ) : (
       <AccountGate>
         {(user, refresh, logout) => (
