@@ -50,21 +50,59 @@ public sealed class EmailTests : IDisposable
             Sent.Add((message, id));
         }
     }
-    private WebApplicationFactory<Program> App() => new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+    private WebApplicationFactory<Program> App(HttpMessageHandler? cloudflareHandler = null) => new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
     {
         builder.UseEnvironment("Development");
         builder.ConfigureAppConfiguration((_, cfg) => cfg.AddInMemoryCollection(new Dictionary<string, string?>
         { ["Storage:Path"] = Path.Combine(directory, "test.db"), ["Email:PublicUrl"] = "https://journal.example", ["Tracker:Password"] = "original-secret" }));
+        if (cloudflareHandler is not null)
+            builder.ConfigureAppConfiguration((_, cfg) => cfg.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Email:Provider"] = "Cloudflare", ["Email:Enabled"] = "true",
+                ["Email:Cloudflare:AccountId"] = new string('a', 32), ["Email:Cloudflare:ApiToken"] = "test-token",
+                ["Email:From"] = "dodo <summaries@dodojournal.com>"
+            }));
         builder.ConfigureServices(services =>
         {
             services.AddSingleton<ILoggerProvider>(logs);
             services.RemoveAll<TimeProvider>(); services.AddSingleton<TimeProvider>(clock);
-            services.RemoveAll<IEmailTransport>(); services.AddSingleton<IEmailTransport>(transport);
+            if (cloudflareHandler is null)
+            { services.RemoveAll<IEmailTransport>(); services.AddSingleton<IEmailTransport>(transport); }
+            else services.AddHttpClient("CloudflareEmail").ConfigurePrimaryHttpMessageHandler(() => cloudflareHandler);
             // Drive the real queue deterministically, without a background poll racing test operations.
             var worker = services.Single(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(EmailWorker));
             services.Remove(worker);
         });
     });
+    private sealed class CloudflareHandler : HttpMessageHandler
+    {
+        public int Attempts;
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Attempts++;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(Attempts == 1 ? "invalid provider JSON" :
+                    """{"success":true,"result":{"queued":["alice@example.com"]}}""")
+            });
+        }
+    }
+    [Fact]
+    public async Task CloudflareProviderUsesRealQueueAndRetriesMalformedApiResponse()
+    {
+        using var handler = new CloudflareHandler();
+        using var app = App(handler); using var user = await Register(app); await Save(user);
+        Assert.IsType<CloudflareEmailTransport>(app.Services.GetRequiredService<IEmailTransport>());
+        var queue = app.Services.GetRequiredService<EmailQueue>();
+        Assert.True(await queue.ProcessOne());
+        Assert.Contains(logs.Messages, message => message.Contains("reason cloudflare-invalid-response; stage send; state pending"));
+        Assert.False(await queue.ProcessOne());
+        clock.Now = clock.Now.AddMinutes(3);
+        Assert.True(await queue.ProcessOne());
+        Assert.Equal(2, handler.Attempts);
+        Assert.Contains(logs.Messages, message => message.Contains("accepted by email provider on attempt 2"));
+        Assert.False(await queue.ProcessOne());
+    }
     private static async Task Csrf(HttpClient client)
     {
         var json = await client.GetFromJsonAsync<JsonElement>("/api/account/csrf");
@@ -337,7 +375,7 @@ public sealed class EmailTests : IDisposable
         Assert.All(logs.Messages, message => { Assert.DoesNotContain(secret, message); Assert.DoesNotContain("alice@example.com", message); });
         transport.Failure = null; clock.Now = clock.Now.AddMinutes(5);
         Assert.True(await queue.ProcessOne());
-        Assert.Contains(logs.Messages, message => message.Contains("accepted by SMTP on attempt 3"));
+        Assert.Contains(logs.Messages, message => message.Contains("accepted by email provider on attempt 3"));
     }
     [Fact]
     public async Task SmtpDiagnosticsIdentifyAuthenticationStageWhenServerDoesNotOfferAuth()

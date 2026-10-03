@@ -25,7 +25,21 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 builder.Services.AddSingleton<EntryStore>();
 builder.Services.AddSingleton<SocialStore>();
 builder.Services.AddSingleton<MotivationStore>();
-builder.Services.AddSingleton<IEmailTransport, SmtpEmailTransport>();
+builder.Services.AddHttpClient("CloudflareEmail", client => client.Timeout = TimeSpan.FromSeconds(30))
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false })
+    .RemoveAllLoggers();
+builder.Services.AddSingleton<IEmailTransport>(services =>
+{
+    var config = services.GetRequiredService<IConfiguration>();
+    var environment = services.GetRequiredService<IHostEnvironment>();
+    return (config["Email:Provider"] ?? "Smtp") switch
+    {
+        "Smtp" => new SmtpEmailTransport(config, environment),
+        "Cloudflare" => new CloudflareEmailTransport(config, environment,
+            services.GetRequiredService<IHttpClientFactory>().CreateClient("CloudflareEmail")),
+        _ => throw new InvalidOperationException("Email:Provider must be Smtp or Cloudflare.")
+    };
+});
 builder.Services.AddSingleton<EmailPreferencesStore>();
 builder.Services.AddSingleton<WeeklySummaryStore>();
 builder.Services.AddSingleton<EmailQueue>();

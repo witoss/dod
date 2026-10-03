@@ -5,6 +5,9 @@ services:
     environment:
       Tracker__Password: ${TRACKER_PASSWORD:?Set TRACKER_PASSWORD in .env}
       Email__Enabled: ${EMAIL_ENABLED:-false}
+      Email__Provider: ${EMAIL_PROVIDER:-Smtp}
+      Email__Cloudflare__AccountId: ${EMAIL_CLOUDFLARE_ACCOUNT_ID:-}
+      Email__Cloudflare__ApiToken: ${EMAIL_CLOUDFLARE_API_TOKEN:-}
       Email__PublicUrl: ${EMAIL_PUBLIC_URL:-}
       Email__Host: ${EMAIL_SMTP_HOST:-}
       Email__Port: ${EMAIL_SMTP_PORT:-587}

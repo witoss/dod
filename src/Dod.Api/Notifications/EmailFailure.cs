@@ -18,6 +18,9 @@ public static class EmailFailure
         {
             var code = cause switch
             {
+                CloudflareEmailException cloudflare => cloudflare.Code,
+                HttpRequestException http => http.StatusCode is { } status ? $"http-{(int)status}" : "connection-http",
+                TimeoutException => "connection-timeout",
                 SmtpCommandException smtp => $"smtp-{(int)smtp.StatusCode}-{smtp.ErrorCode}",
                 MailKit.Security.AuthenticationException => "smtp-authentication",
                 MailKit.Security.SslHandshakeException => "tls-handshake",

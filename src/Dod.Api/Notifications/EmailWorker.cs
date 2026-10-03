@@ -130,7 +130,7 @@ public sealed class EmailQueue(EntryStore entries, EmailPreferencesStore prefere
             """, ("$state", state), ("$next", Now + Math.Min(21600, 60 * (1L << Math.Min(attempt, 8)))),
             ("$now", Now), ("$id", id), ("$attempt", attempt), ("$lease", lease));
         if (await finish.ExecuteNonQueryAsync() == 1 && state == "sent")
-            logger.LogInformation("Email {Id} accepted by SMTP on attempt {Attempt}", id, attempt);
+            logger.LogInformation("Email {Id} accepted by email provider on attempt {Attempt}", id, attempt);
         return true;
     }
 }
